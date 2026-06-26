@@ -47,6 +47,7 @@ export default function History({ onRefresh }: HistoryProps) {
             if (b.wins !== a.wins) return b.wins - a.wins;
             return b.score - a.score;
           });
+          const hasContributors = session.wines.some(w => w.submitted_by && w.submitted_by !== 'Guest');
 
           return (
             <div 
@@ -79,9 +80,11 @@ export default function History({ onRefresh }: HistoryProps) {
                     <p className="text-sm font-semibold text-slate-250 leading-tight">
                       {session.winnerName}
                     </p>
-                    <p className="text-xs text-slate-500">
-                      Brought by: {session.winnerBroughtBy}
-                    </p>
+                    {session.winnerBroughtBy && session.winnerBroughtBy !== 'Guest' && (
+                      <p className="text-xs text-slate-500">
+                        Brought by: {session.winnerBroughtBy}
+                      </p>
+                    )}
                   </div>
 
                   {/* Expand icon */}
@@ -129,7 +132,7 @@ export default function History({ onRefresh }: HistoryProps) {
                             <th className="py-2.5 px-2">Rank</th>
                             {session.wines[0]?.blind_label && <th className="py-2.5 px-2 text-center">Label</th>}
                             <th className="py-2.5 px-3">Wine Details</th>
-                            <th className="py-2.5 px-3">Contributor</th>
+                            {hasContributors && <th className="py-2.5 px-3">Contributor</th>}
                             <th className="py-2.5 px-3">Price</th>
                             <th className="py-2.5 px-3 text-center">Wins</th>
                             <th className="py-2.5 px-3 text-center">Appreciation Score</th>
@@ -145,7 +148,7 @@ export default function History({ onRefresh }: HistoryProps) {
                                 </td>
                               )}
                               <td className="py-2.5 px-3 font-semibold text-slate-200">{wine.name}</td>
-                              <td className="py-2.5 px-3 text-slate-400">{wine.submitted_by}</td>
+                              {hasContributors && <td className="py-2.5 px-3 text-slate-400">{wine.submitted_by}</td>}
                               <td className="py-2.5 px-3 font-mono font-bold text-amber-500">${wine.price.toFixed(2)}</td>
                               <td className="py-2.5 px-3 text-center font-bold text-slate-200">{wine.wins}</td>
                               <td className="py-2.5 px-3 text-center font-bold text-wine-300">{wine.score}/100</td>
@@ -158,7 +161,11 @@ export default function History({ onRefresh }: HistoryProps) {
 
                   {/* Price vs Performance chart summary */}
                   <div className="pt-2 border-t border-slate-900 text-[10px] text-slate-500 flex justify-between items-center">
-                    <span>Winner brought by: <strong className="text-slate-400">{session.winnerBroughtBy}</strong></span>
+                    {session.winnerBroughtBy && session.winnerBroughtBy !== 'Guest' ? (
+                      <span>Winner brought by: <strong className="text-slate-400">{session.winnerBroughtBy}</strong></span>
+                    ) : (
+                      <span></span>
+                    )}
                     <span>Second Place: <strong className="text-slate-400">{session.secondPlace}</strong></span>
                   </div>
 
