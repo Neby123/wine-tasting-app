@@ -184,8 +184,21 @@ export const initMockDB = () => {
   if (!localStorage.getItem(LS_KEYS.VOTES)) {
     saveToLS(LS_KEYS.VOTES, [] as Vote[]);
   }
-  if (!localStorage.getItem(LS_KEYS.HISTORY)) {
+  
+  const existingHistory = localStorage.getItem(LS_KEYS.HISTORY);
+  if (!existingHistory) {
     saveToLS(LS_KEYS.HISTORY, HISTORICAL_SESSIONS);
+  } else {
+    try {
+      const parsed = JSON.parse(existingHistory) as HistoricalTasting[];
+      // Overwrite if it contains the old mock dates or placeholders
+      const hasPlaceholders = parsed.some(s => s.id === 'hist-chard-show' && (s.date === '2025-05-15' || s.winnerBroughtBy === 'Dave & Barb'));
+      if (hasPlaceholders) {
+        saveToLS(LS_KEYS.HISTORY, HISTORICAL_SESSIONS);
+      }
+    } catch {
+      saveToLS(LS_KEYS.HISTORY, HISTORICAL_SESSIONS);
+    }
   }
 };
 
