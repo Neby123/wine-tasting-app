@@ -63,21 +63,21 @@ export const HISTORICAL_SESSIONS: HistoricalTasting[] = [
     date: "2025-08-02",
     winnerName: "California Heritage (Aldi)",
     winnerPrice: 4.99,
-    winnerBroughtBy: "Ben",
+    winnerBroughtBy: "Guest",
     winesCount: 8,
     groupWinner: "California Heritage (Aldi) ($4.99)",
     secondPlace: "La Belle Angele (Total Wine)",
     bestValue: "California Heritage (Aldi) ($4.99)",
     giantKiller: "California Heritage (Aldi) (E, $4.99) beat 2019 Hyde (Auteur) (G, $55.00)",
     wines: [
-      { name: "California Heritage (Aldi)", price: 4.99, submitted_by: "Ben", blind_label: "E", score: 76, wins: 11 },
-      { name: "La Belle Angele (Total Wine)", price: 11.99, submitted_by: "Monica", blind_label: "A", score: 64, wins: 6 },
-      { name: "2019 Hyde (Auteur)", price: 55.00, submitted_by: "Abby", blind_label: "G", score: 62, wins: 5 },
-      { name: "Toad Hollow 2022 (Total Wine)", price: 12.00, submitted_by: "JB3", blind_label: "D", score: 62, wins: 5 },
-      { name: "Peaks & Tides (Aldi)", price: 9.99, submitted_by: "Ben", blind_label: "C", score: 62, wins: 5 },
-      { name: "Kirkland Signature Sonoma County (Costco)", price: 7.00, submitted_by: "David Dyck", blind_label: "F", score: 60, wins: 4 },
-      { name: "Josh Cellars (Total Wine)", price: 10.00, submitted_by: "Alexcia", blind_label: "B", score: 60, wins: 4 },
-      { name: "Butter (Costco)", price: 12.89, submitted_by: "Ben", blind_label: "H", score: 55, wins: 2 }
+      { name: "California Heritage (Aldi)", price: 4.99, submitted_by: "Guest", blind_label: "E", score: 76, wins: 11 },
+      { name: "La Belle Angele (Total Wine)", price: 11.99, submitted_by: "Guest", blind_label: "A", score: 64, wins: 6 },
+      { name: "2019 Hyde (Auteur)", price: 55.00, submitted_by: "Guest", blind_label: "G", score: 62, wins: 5 },
+      { name: "Toad Hollow 2022 (Total Wine)", price: 12.00, submitted_by: "Guest", blind_label: "D", score: 62, wins: 5 },
+      { name: "Peaks & Tides (Aldi)", price: 9.99, submitted_by: "Guest", blind_label: "C", score: 62, wins: 5 },
+      { name: "Kirkland Signature Sonoma County (Costco)", price: 7.00, submitted_by: "Guest", blind_label: "F", score: 60, wins: 4 },
+      { name: "Josh Cellars (Total Wine)", price: 10.00, submitted_by: "Guest", blind_label: "B", score: 60, wins: 4 },
+      { name: "Butter (Costco)", price: 12.89, submitted_by: "Guest", blind_label: "H", score: 55, wins: 2 }
     ]
   },
   {
@@ -86,21 +86,21 @@ export const HISTORICAL_SESSIONS: HistoricalTasting[] = [
     date: "2025-09-20",
     winnerName: "Buena Vista Bela's Selection 2021",
     winnerPrice: 58.00,
-    winnerBroughtBy: "Monica",
+    winnerBroughtBy: "Guest",
     winesCount: 8,
     groupWinner: "Buena Vista Bela's Selection 2021 ($58.00)",
     secondPlace: "Firesteed Oregon 2022",
     bestValue: "California Heritage (Aldi) ($4.99)",
     giantKiller: "Firesteed Oregon 2022 (H, $14.99) beat 2023 Illahe Pinot Noir (F, $30.00)",
     wines: [
-      { name: "Buena Vista Bela's Selection 2021", price: 58.00, submitted_by: "Monica", blind_label: "G", score: 92, wins: 15 },
-      { name: "Firesteed Oregon 2022", price: 14.99, submitted_by: "Ben", blind_label: "H", score: 78, wins: 10 },
-      { name: "Salem Eola-Amity Hills 2023", price: 26.00, submitted_by: "JB3", blind_label: "D", score: 72, wins: 8 },
-      { name: "Banshee (Costco) ", price: 15.99, submitted_by: "Abby", blind_label: "C", score: 64, wins: 5 },
-      { name: "Maison André Giochot Hautes-Côtes De Nuits", price: 18.99, submitted_by: "Ben", blind_label: "B", score: 58, wins: 3 },
-      { name: "2023 Illahe Pinot Noir Willamette Valley", price: 30.00, submitted_by: "David Dyck", blind_label: "F", score: 53, wins: 1 },
-      { name: "Don't Mind If I Do (Aldi)", price: 7.99, submitted_by: "Monica", blind_label: "A", score: 50, wins: 0 },
-      { name: "California Heritage (Aldi)", price: 4.99, submitted_by: "Alexcia", blind_label: "E", score: 50, wins: 0 }
+      { name: "Buena Vista Bela's Selection 2021", price: 58.00, submitted_by: "Guest", blind_label: "G", score: 92, wins: 15 },
+      { name: "Firesteed Oregon 2022", price: 14.99, submitted_by: "Guest", blind_label: "H", score: 78, wins: 10 },
+      { name: "Salem Eola-Amity Hills 2023", price: 26.00, submitted_by: "Guest", blind_label: "D", score: 72, wins: 8 },
+      { name: "Banshee (Costco) ", price: 15.99, submitted_by: "Guest", blind_label: "C", score: 64, wins: 5 },
+      { name: "Maison André Giochot Hautes-Côtes De Nuits", price: 18.99, submitted_by: "Guest", blind_label: "B", score: 58, wins: 3 },
+      { name: "2023 Illahe Pinot Noir Willamette Valley", price: 30.00, submitted_by: "Guest", blind_label: "F", score: 53, wins: 1 },
+      { name: "Don't Mind If I Do (Aldi)", price: 7.99, submitted_by: "Guest", blind_label: "A", score: 50, wins: 0 },
+      { name: "California Heritage (Aldi)", price: 4.99, submitted_by: "Guest", blind_label: "E", score: 50, wins: 0 }
     ]
   },
   {
@@ -109,21 +109,21 @@ export const HISTORICAL_SESSIONS: HistoricalTasting[] = [
     date: "2025-11-15",
     winnerName: "Scouts Honor",
     winnerPrice: 35.00,
-    winnerBroughtBy: "Monica",
+    winnerBroughtBy: "Guest",
     winesCount: 8,
     groupWinner: "Scouts Honor ($35.00)",
     secondPlace: "Apothic Red",
     bestValue: "Kirkland Signature Red Wine Blend ($4.00)",
     giantKiller: "Apothic Red (B, $7.39) beat Menagerie of the Barossa (C, $26.00)",
     wines: [
-      { name: "Scouts Honor", price: 35.00, submitted_by: "Monica", blind_label: "E", score: 75, wins: 9 },
-      { name: "Apothic Red", price: 7.39, submitted_by: "Ben", blind_label: "B", score: 72, wins: 8 },
-      { name: "Beau Vigne Hero 2022", price: 23.70, submitted_by: "Abby", blind_label: "G", score: 69, wins: 7 },
-      { name: "Intermingle Aldi", price: 7.79, submitted_by: "David Dyck", blind_label: "A", score: 67, wins: 6 },
-      { name: "Nastergal", price: 29.00, submitted_by: "JB3", blind_label: "F", score: 64, wins: 5 },
-      { name: "Pillars of Hercules", price: 12.99, submitted_by: "Monica", blind_label: "H", score: 58, wins: 3 },
-      { name: "Kirkland Signature Red Wine Blend", price: 4.00, submitted_by: "Alexcia", blind_label: "D", score: 58, wins: 3 },
-      { name: "Menagerie of the Barossa", price: 26.00, submitted_by: "Ben", blind_label: "C", score: 53, wins: 1 }
+      { name: "Scouts Honor", price: 35.00, submitted_by: "Guest", blind_label: "E", score: 75, wins: 9 },
+      { name: "Apothic Red", price: 7.39, submitted_by: "Guest", blind_label: "B", score: 72, wins: 8 },
+      { name: "Beau Vigne Hero 2022", price: 23.70, submitted_by: "Guest", blind_label: "G", score: 69, wins: 7 },
+      { name: "Intermingle Aldi", price: 7.79, submitted_by: "Guest", blind_label: "A", score: 67, wins: 6 },
+      { name: "Nastergal", price: 29.00, submitted_by: "Guest", blind_label: "F", score: 64, wins: 5 },
+      { name: "Pillars of Hercules", price: 12.99, submitted_by: "Guest", blind_label: "H", score: 58, wins: 3 },
+      { name: "Kirkland Signature Red Wine Blend", price: 4.00, submitted_by: "Guest", blind_label: "D", score: 58, wins: 3 },
+      { name: "Menagerie of the Barossa", price: 26.00, submitted_by: "Guest", blind_label: "C", score: 53, wins: 1 }
     ]
   },
   {
@@ -132,21 +132,21 @@ export const HISTORICAL_SESSIONS: HistoricalTasting[] = [
     date: "2026-03-14",
     winnerName: "One Stone",
     winnerPrice: 19.99,
-    winnerBroughtBy: "Monica",
+    winnerBroughtBy: "Guest",
     winesCount: 8,
     groupWinner: "One Stone ($19.99)",
     secondPlace: "Vina Alicia",
     bestValue: "California Heritage Aldi ($4.99)",
     giantKiller: "One Stone (A, $19.99) beat Silver Oak (E, $90.00)",
     wines: [
-      { name: "One Stone", price: 19.99, submitted_by: "Monica", blind_label: "A", score: 74, wins: 10 },
-      { name: "Vina Alicia", price: 15.99, submitted_by: "Ryan", blind_label: "G", score: 67, wins: 7 },
-      { name: "Intermingle Aldi", price: 6.99, submitted_by: "Ben", blind_label: "F", score: 67, wins: 7 },
-      { name: "California Heritage Aldi", price: 4.99, submitted_by: "David Dyck", blind_label: "D", score: 64, wins: 6 },
-      { name: "Silver Oak", price: 90.00, submitted_by: "JB3", blind_label: "E", score: 62, wins: 5 },
-      { name: "Wines of Substance Cab", price: 14.99, submitted_by: "Alexcia", blind_label: "C", score: 62, wins: 5 },
-      { name: "Knorhoek Cabernet Stellenbosch", price: 26.99, submitted_by: "Abby", blind_label: "B", score: 62, wins: 5 },
-      { name: "Method", price: 9.99, submitted_by: "Monica", blind_label: "H", score: 60, wins: 4 }
+      { name: "One Stone", price: 19.99, submitted_by: "Guest", blind_label: "A", score: 74, wins: 10 },
+      { name: "Vina Alicia", price: 15.99, submitted_by: "Guest", blind_label: "G", score: 67, wins: 7 },
+      { name: "Intermingle Aldi", price: 6.99, submitted_by: "Guest", blind_label: "F", score: 67, wins: 7 },
+      { name: "California Heritage Aldi", price: 4.99, submitted_by: "Guest", blind_label: "D", score: 64, wins: 6 },
+      { name: "Silver Oak", price: 90.00, submitted_by: "Guest", blind_label: "E", score: 62, wins: 5 },
+      { name: "Wines of Substance Cab", price: 14.99, submitted_by: "Guest", blind_label: "C", score: 62, wins: 5 },
+      { name: "Knorhoek Cabernet Stellenbosch", price: 26.99, submitted_by: "Guest", blind_label: "B", score: 62, wins: 5 },
+      { name: "Method", price: 9.99, submitted_by: "Guest", blind_label: "H", score: 60, wins: 4 }
     ]
   }
 ];
