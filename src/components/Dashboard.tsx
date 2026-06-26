@@ -112,23 +112,49 @@ export default function Dashboard({
   };
 
   // Compile full table of wine stats
-  const wineStats = wines.map(w => {
-    const label = w.blind_label || '';
-    const score = getWineAppreciationIndex(label);
-    
-    // Count bracket wins
-    let wins = 0;
-    Object.values(matchWinners).forEach(winner => {
-      if (winner === label) wins++;
-    });
+  const wineStats = isRevealed
+    ? wines.map(w => {
+        const label = w.blind_label || '';
+        const score = getWineAppreciationIndex(label);
+        
+        // Count bracket wins
+        let wins = 0;
+        Object.values(matchWinners).forEach(winner => {
+          if (winner === label) wins++;
+        });
 
-    return {
-      ...w,
-      score,
-      wins,
-      valueRatio: score / Math.max(1, w.price) // score per dollar
-    };
-  });
+        return {
+          ...w,
+          score,
+          wins,
+          valueRatio: score / Math.max(1, w.price) // score per dollar
+        };
+      })
+    : ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'].map(label => {
+        const score = getWineAppreciationIndex(label);
+        
+        // Count bracket wins
+        let wins = 0;
+        Object.values(matchWinners).forEach(winner => {
+          if (winner === label) wins++;
+        });
+
+        return {
+          id: `label-${label}`,
+          session_id: session.id,
+          submitted_by: 'Anonymous',
+          name: `Wine ${label}`,
+          producer: undefined,
+          vintage: undefined,
+          price: 0,
+          tasting_notes: undefined,
+          blind_label: label,
+          revealed: false,
+          score,
+          wins,
+          valueRatio: 0
+        };
+      });
 
   // Sort stats by wins (primary) and appreciation index (secondary)
   const leaderboard = [...wineStats].sort((a, b) => {
@@ -371,11 +397,14 @@ export default function Dashboard({
                               className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs text-slate-200 focus:outline-none focus:border-wine-500"
                             >
                               <option value="">-- Mapped Wine --</option>
-                              {wines.map(w => (
-                                <option key={w.id} value={w.id}>
-                                  {w.name} (${w.price.toFixed(0)}) - {w.submitted_by}
-                                </option>
-                              ))}
+                              {wines.map(w => {
+                                const isSelectedElsewhere = Object.entries(mapping).some(([lbl, id]) => lbl !== label && id === w.id);
+                                return (
+                                  <option key={w.id} value={w.id} disabled={isSelectedElsewhere}>
+                                    {w.name} (${w.price.toFixed(0)}) - {w.submitted_by} {isSelectedElsewhere ? '(already mapped)' : ''}
+                                  </option>
+                                );
+                              })}
                             </select>
                           </div>
                         </div>

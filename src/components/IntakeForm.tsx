@@ -278,10 +278,10 @@ export default function IntakeForm({
               <div className="mt-6 border-t border-slate-800 pt-6 space-y-4">
                 <div className="bg-slate-950/60 border border-slate-850 rounded-xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                   <div className="space-y-1">
-                    <p className="text-sm font-semibold text-slate-300">Host Launch Pad</p>
+                    <p className="text-sm font-semibold text-slate-350">Host Launch Pad</p>
                     <p className="text-xs text-slate-500">
                       {wines.length === 8 
-                        ? "Ready to initiate! This will assign labels A-H randomly and launch the tournament bracket." 
+                        ? "Ready to initiate! Please physically place the 8 bottles into paper bags A-H in a completely random order, keeping the assignments blind to everyone. Once bagged, click Generate Bracket to open voting." 
                         : `Need exactly 8 wines to build the bracket (currently at ${wines.length}).`}
                     </p>
                   </div>

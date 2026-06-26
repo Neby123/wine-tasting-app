@@ -38,6 +38,32 @@ export default function Brackets({
     return votes.some(v => v.match_id === matchId && v.voter_name.toLowerCase() === voterName.toLowerCase());
   };
 
+  // Helper to get notes & score for a specific label
+  const getPersonalNotesForLabel = (label: string) => {
+    // Find any vote by this voter containing this label
+    const vote = votes.find(v => 
+      v.voter_name.toLowerCase() === voterName.toLowerCase() && 
+      (v.wine_1_label === label || v.wine_2_label === label)
+    );
+
+    if (!vote) return null;
+
+    const isWine1 = vote.wine_1_label === label;
+    const notes = isWine1 ? vote.notes_wine_1 : vote.notes_wine_2;
+    
+    // Calculate preference score relative to this wine (0-100)
+    // If it's wine_1, score is (100 - slider_value)
+    // If it's wine_2, score is slider_value
+    const score = isWine1 ? (100 - vote.slider_value) : vote.slider_value;
+
+    return {
+      notes: notes?.trim() || "No notes logged.",
+      score,
+      matchId: vote.match_id,
+      opponent: isWine1 ? vote.wine_2_label : vote.wine_1_label
+    };
+  };
+
   // Define matches
   // Q1: A vs B
   // Q2: C vs D
@@ -273,6 +299,72 @@ export default function Brackets({
           )}
         </div>
 
+      </div>
+
+      {/* My Tasting Journal Section */}
+      <div className="border-t border-slate-850 pt-10 mt-12 space-y-6">
+        <div className="text-center max-w-xl mx-auto space-y-2">
+          <h3 className="text-2xl font-bold font-serif text-wine-200">My Tasting Journal</h3>
+          <p className="text-slate-400 text-sm">
+            Review your ratings and private tasting notes for each bottle. True identities will appear once the host reveals the results.
+          </p>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+          {['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'].map((label) => {
+            const personalInfo = getPersonalNotesForLabel(label);
+            const wineDetail = getWineByLabel(label);
+            
+            return (
+              <div 
+                key={label}
+                className={`glass-panel rounded-2xl p-5 space-y-4 flex flex-col justify-between min-h-[180px] relative overflow-hidden transition-all duration-300 ${
+                  personalInfo ? 'border-wine-800/40 bg-slate-900/60' : 'opacity-40 bg-slate-950/20'
+                }`}
+              >
+                <div className="space-y-3">
+                  <div className="flex justify-between items-start">
+                    <span className="w-8 h-8 rounded-full bg-wine-850 border border-wine-800/40 text-white font-black font-serif flex items-center justify-center text-sm shadow">
+                      {label}
+                    </span>
+                    {personalInfo && (
+                      <span className="text-[10px] bg-slate-950 px-2 py-0.5 border border-slate-850 text-slate-400 rounded-full font-mono font-bold">
+                        Score: {personalInfo.score}/100
+                      </span>
+                    )}
+                  </div>
+
+                  {revealed && wineDetail ? (
+                    <div className="space-y-0.5">
+                      <h4 className="text-sm font-bold text-wine-200 font-serif line-clamp-1">{wineDetail.name}</h4>
+                      <p className="text-[10px] text-slate-450 flex justify-between">
+                        <span>By: <strong>{wineDetail.submitted_by}</strong></span>
+                        <span className="text-amber-400 font-semibold">${wineDetail.price.toFixed(2)}</span>
+                      </p>
+                    </div>
+                  ) : (
+                    <h4 className="text-sm font-bold text-slate-350 font-serif">Wine {label}</h4>
+                  )}
+
+                  {personalInfo ? (
+                    <p className="text-xs text-slate-450 italic line-clamp-3 bg-slate-950/40 p-2.5 rounded-lg border border-slate-900 leading-relaxed">
+                      "{personalInfo.notes}"
+                    </p>
+                  ) : (
+                    <p className="text-xs text-slate-600 italic">Not tasted yet.</p>
+                  )}
+                </div>
+
+                {personalInfo && (
+                  <div className="text-[9px] text-slate-500 font-semibold flex justify-between border-t border-slate-850/60 pt-2 mt-2">
+                    <span>Tasted in: {personalInfo.matchId}</span>
+                    <span>Vs: Wine {personalInfo.opponent}</span>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
       </div>
     </div>
   );
