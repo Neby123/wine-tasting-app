@@ -173,8 +173,11 @@ export default function Dashboard({
     // 2. People's Choice (Highest average rating)
     const peoplesChoice = [...wineStats].sort((a, b) => b.score - a.score)[0];
 
-    // 3. Best Value (Highest rating-to-price ratio)
-    const bestValue = [...wineStats].sort((a, b) => b.valueRatio - a.valueRatio)[0];
+    // 3. Best Value (Highest rating-to-price ratio, must have won at least 1 match)
+    const bestValueWines = wineStats.filter(w => w.wins > 0);
+    const bestValue = bestValueWines.length > 0
+      ? [...bestValueWines].sort((a, b) => b.valueRatio - a.valueRatio)[0]
+      : [...wineStats].sort((a, b) => b.valueRatio - a.valueRatio)[0];
 
     // 4. Overpriced (Lowest rating-to-price ratio, filter to expensive ones > $20)
     const expensiveWines = wineStats.filter(w => w.price >= 20);

@@ -90,7 +90,7 @@ export const HISTORICAL_SESSIONS: HistoricalTasting[] = [
     winesCount: 8,
     groupWinner: "Buena Vista Bela's Selection 2021 ($58.00)",
     secondPlace: "Firesteed Oregon 2022",
-    bestValue: "California Heritage (Aldi) ($4.99)",
+    bestValue: "Firesteed Oregon 2022 ($14.99)",
     giantKiller: "Firesteed Oregon 2022 (H, $14.99) beat 2023 Illahe Pinot Noir (F, $30.00)",
     wines: [
       { name: "Buena Vista Bela's Selection 2021", price: 58.00, submitted_by: "Guest", blind_label: "G", score: 92, wins: 15 },
@@ -191,8 +191,11 @@ export const initMockDB = () => {
   } else {
     try {
       const parsed = JSON.parse(existingHistory) as HistoricalTasting[];
-      // Overwrite if it contains the old mock dates or placeholders
-      const hasPlaceholders = parsed.some(s => s.id === 'hist-chard-show' && (s.date === '2025-05-15' || s.winnerBroughtBy === 'Dave & Barb'));
+      // Overwrite if it contains the old mock dates or has the Best Value bug in Pinot Show
+      const hasPlaceholders = parsed.some(s => 
+        (s.id === 'hist-chard-show' && (s.date === '2025-05-15' || s.winnerBroughtBy === 'Dave & Barb')) ||
+        (s.id === 'hist-pinot-show' && s.bestValue.includes('California Heritage'))
+      );
       if (hasPlaceholders) {
         saveToLS(LS_KEYS.HISTORY, HISTORICAL_SESSIONS);
       }
