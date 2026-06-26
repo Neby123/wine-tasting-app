@@ -339,67 +339,69 @@ export default function App() {
         </div>
 
         {/* Global User status info */}
-        {activeSession && (
-          <nav className="flex flex-wrap items-center bg-slate-950/60 p-1 border border-slate-850 rounded-xl text-xs font-semibold gap-1">
-            <button
-              onClick={() => { setCurrentMatch(null); setCurrentTab('intake'); }}
-              disabled={activeSession.status !== 'setup'}
-              className={`px-4 py-2 rounded-lg transition-colors flex items-center gap-1.5 ${
-                currentTab === 'intake' && !currentMatch
-                  ? 'bg-wine-850 text-wine-200' 
-                  : 'text-slate-400 hover:text-slate-200 disabled:opacity-30 disabled:pointer-events-none'
-              }`}
-            >
-              <ClipboardList className="w-4 h-4" /> Register ({wines.length})
-            </button>
+        <nav className="flex flex-wrap items-center bg-slate-950/60 p-1 border border-slate-850 rounded-xl text-xs font-semibold gap-1">
+          {activeSession && (
+            <>
+              <button
+                onClick={() => { setCurrentMatch(null); setCurrentTab('intake'); }}
+                disabled={activeSession.status !== 'setup'}
+                className={`px-4 py-2 rounded-lg transition-colors flex items-center gap-1.5 ${
+                  currentTab === 'intake' && !currentMatch
+                    ? 'bg-wine-850 text-wine-200' 
+                    : 'text-slate-400 hover:text-slate-200 disabled:opacity-30 disabled:pointer-events-none'
+                }`}
+              >
+                <ClipboardList className="w-4 h-4" /> Register ({wines.length})
+              </button>
 
-            <button
-              onClick={() => { setCurrentMatch(null); setCurrentTab('brackets'); }}
-              disabled={activeSession.status === 'setup'}
-              className={`px-4 py-2 rounded-lg transition-colors flex items-center gap-1.5 ${
-                currentTab === 'brackets' || currentMatch
-                  ? 'bg-wine-850 text-wine-200' 
-                  : 'text-slate-400 hover:text-slate-200 disabled:opacity-30 disabled:pointer-events-none'
-              }`}
-            >
-              <Layers className="w-4 h-4" /> Bracket
-            </button>
+              <button
+                onClick={() => { setCurrentMatch(null); setCurrentTab('brackets'); }}
+                disabled={activeSession.status === 'setup'}
+                className={`px-4 py-2 rounded-lg transition-colors flex items-center gap-1.5 ${
+                  currentTab === 'brackets' || currentMatch
+                    ? 'bg-wine-850 text-wine-200' 
+                    : 'text-slate-400 hover:text-slate-200 disabled:opacity-30 disabled:pointer-events-none'
+                }`}
+              >
+                <Layers className="w-4 h-4" /> Bracket
+              </button>
 
-            <button
-              onClick={() => { setCurrentMatch(null); setCurrentTab('dashboard'); }}
-              disabled={activeSession.status === 'setup'}
-              className={`px-4 py-2 rounded-lg transition-colors flex items-center gap-1.5 ${
-                currentTab === 'dashboard' && !currentMatch
-                  ? 'bg-wine-850 text-wine-200' 
-                  : 'text-slate-400 hover:text-slate-200 disabled:opacity-30 disabled:pointer-events-none'
-              }`}
-            >
-              <Trophy className="w-4 h-4" /> Standings & Stats
-            </button>
+              <button
+                onClick={() => { setCurrentMatch(null); setCurrentTab('dashboard'); }}
+                disabled={activeSession.status === 'setup'}
+                className={`px-4 py-2 rounded-lg transition-colors flex items-center gap-1.5 ${
+                  currentTab === 'dashboard' && !currentMatch
+                    ? 'bg-wine-850 text-wine-200' 
+                    : 'text-slate-400 hover:text-slate-200 disabled:opacity-30 disabled:pointer-events-none'
+                }`}
+              >
+                <Trophy className="w-4 h-4" /> Standings & Stats
+              </button>
+            </>
+          )}
 
-            <button
-              onClick={() => { setCurrentMatch(null); setCurrentTab('history'); }}
-              className={`px-4 py-2 rounded-lg transition-colors flex items-center gap-1.5 ${
-                currentTab === 'history' && !currentMatch
-                  ? 'bg-wine-850 text-wine-200' 
-                  : 'text-slate-400 hover:text-slate-200'
-              }`}
-            >
-              <HistoryIcon className="w-4 h-4" /> History
-            </button>
+          <button
+            onClick={() => { setCurrentMatch(null); setCurrentTab('history'); }}
+            className={`px-4 py-2 rounded-lg transition-colors flex items-center gap-1.5 ${
+              currentTab === 'history' && !currentMatch
+                ? 'bg-wine-850 text-wine-200' 
+                : 'text-slate-400 hover:text-slate-200'
+            }`}
+          >
+            <HistoryIcon className="w-4 h-4" /> History
+          </button>
 
-            <button
-              onClick={() => { setCurrentMatch(null); setCurrentTab('settings'); }}
-              className={`px-4 py-2 rounded-lg transition-colors flex items-center gap-1.5 ${
-                currentTab === 'settings' && !currentMatch
-                  ? 'bg-wine-850 text-wine-200' 
-                  : 'text-slate-400 hover:text-slate-200'
-              }`}
-            >
-              <SettingsIcon className="w-4 h-4" /> Settings
-            </button>
-          </nav>
-        )}
+          <button
+            onClick={() => { setCurrentMatch(null); setCurrentTab('settings'); }}
+            className={`px-4 py-2 rounded-lg transition-colors flex items-center gap-1.5 ${
+              currentTab === 'settings' && !currentMatch
+                ? 'bg-wine-850 text-wine-200' 
+                : 'text-slate-400 hover:text-slate-200'
+            }`}
+          >
+            <SettingsIcon className="w-4 h-4" /> Settings
+          </button>
+        </nav>
       </header>
 
       {/* Main Container */}
@@ -409,6 +411,19 @@ export default function App() {
           <div className="flex flex-col items-center justify-center py-32 space-y-4">
             <RefreshCw className="w-8 h-8 text-wine-500 animate-spin" />
             <p className="text-sm text-slate-500 font-medium">Fetching tasting board...</p>
+          </div>
+        ) : (currentTab === 'settings' || currentTab === 'history') ? (
+          /* Settings and History are accessible even without active session */
+          <div className="space-y-6">
+            {currentTab === 'history' && <History onRefresh={loadData} />}
+            {currentTab === 'settings' && (
+              <Settings
+                voterName={voterName}
+                isHost={isHost}
+                onUpdateVoterName={handleUpdateVoterName}
+                onUpdateHostMode={handleUpdateHostMode}
+              />
+            )}
           </div>
         ) : !activeSession ? (
           /* Session Initialization Screen */
@@ -440,9 +455,16 @@ export default function App() {
                 {!voterName && (
                   <div className="bg-amber-950/20 border border-amber-900/30 rounded-xl p-3.5 flex items-start gap-2.5 text-xs text-amber-300">
                     <AlertCircle className="w-4 h-4 shrink-0 text-amber-400" />
-                    <div>
-                      <p className="font-semibold mb-0.5">Profile Name Not Found</p>
-                      <p className="text-slate-400">You must set your profile name in settings before creating a session so you can log your wines.</p>
+                    <div className="space-y-1">
+                      <p className="font-semibold mb-0.5">Profile Name Required</p>
+                      <p className="text-slate-400">Set your name/couple name in settings first so the app can register your wine contributions.</p>
+                      <button
+                        type="button"
+                        onClick={() => setCurrentTab('settings')}
+                        className="text-amber-400 font-bold hover:underline block text-left"
+                      >
+                        Go to Settings &rarr;
+                      </button>
                     </div>
                   </div>
                 )}
@@ -513,19 +535,6 @@ export default function App() {
                 onResolveMatch={handleResolveMatch}
                 onRevealWines={handleRevealWines}
                 onResetSession={handleResetSession}
-              />
-            )}
-
-            {currentTab === 'history' && (
-              <History onRefresh={loadData} />
-            )}
-
-            {currentTab === 'settings' && (
-              <Settings
-                voterName={voterName}
-                isHost={isHost}
-                onUpdateVoterName={handleUpdateVoterName}
-                onUpdateHostMode={handleUpdateHostMode}
               />
             )}
           </div>
