@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { HistoricalTasting, mockDB } from '../utils/mockData';
+import { HistoricalTasting } from '../utils/mockData';
+import { db } from '../utils/supabase';
 import { Trophy, Calendar, DollarSign, Award, ChevronDown, ChevronUp, RefreshCw } from 'lucide-react';
 
 interface HistoryProps {
@@ -8,7 +9,7 @@ interface HistoryProps {
 }
 
 export default function History({ voterName, onRefresh }: HistoryProps) {
-  const [sessions, setSessions] = useState<HistoricalTasting[]>(() => mockDB.getHistory());
+  const [sessions, setSessions] = useState<HistoricalTasting[]>(() => db.getHistory());
   const [expandedSessionId, setExpandedSessionId] = useState<string | null>(null);
   const [selectedVoterName, setSelectedVoterName] = useState<Record<string, string>>({});
 
@@ -17,7 +18,7 @@ export default function History({ voterName, onRefresh }: HistoryProps) {
   };
 
   const handleRefresh = () => {
-    const refreshed = mockDB.getHistory();
+    const refreshed = db.getHistory();
     setSessions(refreshed);
     if (onRefresh) onRefresh();
   };

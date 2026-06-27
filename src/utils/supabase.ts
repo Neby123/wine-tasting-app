@@ -1,8 +1,8 @@
-import { createClient, SupabaseClient } from '@supabase/supabase-js';
-import { mockDB, WineSession, Wine, Vote, HistoricalTasting } from './mockData';
+import { createClient } from '@supabase/supabase-js';
+import { WineSession, Wine, Vote, HistoricalTasting, HISTORICAL_SESSIONS } from './mockData';
 
-// Fetch credentials from LocalStorage or URL params
-const getSupabaseConfig = () => {
+const getSBConfig = () => {
+  // Check URL params first (useful for guest invite links)
   const params = new URLSearchParams(window.location.search);
   const urlParam = params.get('sb_url');
   const keyParam = params.get('sb_key');
@@ -20,26 +20,27 @@ const getSupabaseConfig = () => {
 
   const lsUrl = localStorage.getItem('WINE_TASTING_SB_URL');
   const lsKey = localStorage.getItem('WINE_TASTING_SB_KEY');
-
+  
   if (lsUrl && lsKey) {
     return { url: lsUrl, key: lsKey };
   }
-
   return null;
 };
 
-export const config = getSupabaseConfig();
-export const isMockMode = !config;
+const config = getSBConfig();
+export const supabase = config ? createClient(config.url, config.key) : null;
 
-export const supabase: SupabaseClient | null = config 
-  ? createClient(config.url, config.key) 
-  : null;
+const ensureClient = () => {
+  if (!supabase) {
+    throw new Error("Supabase is not configured. Please enter your database URL and API key in Settings.");
+  }
+  return supabase;
+};
 
-// Unified database provider that routes calls to Supabase or MockDB
 export const db = {
   getSessions: async (): Promise<WineSession[]> => {
-    if (isMockMode || !supabase) return mockDB.getSessions();
-    const { data, error } = await supabase
+    const client = ensureClient();
+    const { data, error } = await client
       .from('sessions')
       .select('*')
       .order('date', { ascending: false });
@@ -48,8 +49,8 @@ export const db = {
   },
 
   getActiveSession: async (): Promise<WineSession | null> => {
-    if (isMockMode || !supabase) return mockDB.getActiveSession();
-    const { data, error } = await supabase
+    const client = ensureClient();
+    const { data, error } = await client
       .from('sessions')
       .select('*')
       .neq('status', 'completed')
@@ -60,9 +61,9 @@ export const db = {
   },
 
   createSession: async (name: string): Promise<WineSession> => {
-    if (isMockMode || !supabase) return mockDB.createSession(name);
+    const client = ensureClient();
     // Auto-complete any active sessions
-    await supabase
+    await client
       .from('sessions')
       .update({ status: 'completed' })
       .neq('status', 'completed');
@@ -73,7 +74,7 @@ export const db = {
       status: 'setup'
     };
 
-    const { data, error } = await supabase
+    const { data, error } = await client
       .from('sessions')
       .insert(newSession)
       .select()
@@ -84,8 +85,8 @@ export const db = {
   },
 
   updateSessionStatus: async (sessionId: string, status: 'setup' | 'tasting' | 'completed'): Promise<WineSession | null> => {
-    if (isMockMode || !supabase) return mockDB.updateSessionStatus(sessionId, status);
-    const { data, error } = await supabase
+    const client = ensureClient();
+    const { data, error } = await client
       .from('sessions')
       .update({ status })
       .eq('id', sessionId)
@@ -97,8 +98,8 @@ export const db = {
   },
 
   updateSessionMatchWinners: async (sessionId: string, matchWinners: Record<string, string>): Promise<WineSession | null> => {
-    if (isMockMode || !supabase) return mockDB.updateSessionMatchWinners(sessionId, matchWinners);
-    const { data, error } = await supabase
+    const client = ensureClient();
+    const { data, error } = await client
       .from('sessions')
       .update({ match_winners: matchWinners })
       .eq('id', sessionId)
@@ -110,8 +111,8 @@ export const db = {
   },
 
   getWines: async (sessionId: string): Promise<Wine[]> => {
-    if (isMockMode || !supabase) return mockDB.getWines(sessionId);
-    const { data, error } = await supabase
+    const client = ensureClient();
+    const { data, error } = await client
       .from('wines')
       .select('*')
       .eq('session_id', sessionId);
@@ -121,8 +122,8 @@ export const db = {
   },
 
   addWine: async (wine: Omit<Wine, 'id' | 'revealed'>): Promise<Wine> => {
-    if (isMockMode || !supabase) return mockDB.addWine(wine);
-    const { data, error } = await supabase
+    const client = ensureClient();
+    const { data, error } = await client
       .from('wines')
       .insert({ ...wine, revealed: false })
       .select()
@@ -133,8 +134,8 @@ export const db = {
   },
 
   deleteWine: async (wineId: string): Promise<void> => {
-    if (isMockMode || !supabase) return mockDB.deleteWine(wineId);
-    const { error } = await supabase
+    const client = ensureClient();
+    const { error } = await client
       .from('wines')
       .delete()
       .eq('id', wineId);
@@ -143,9 +144,9 @@ export const db = {
   },
 
   mapAndRevealWines: async (sessionId: string, mapping: Record<string, string>): Promise<Wine[]> => {
-    if (isMockMode || !supabase) return mockDB.mapAndRevealWines(sessionId, mapping);
+    const client = ensureClient();
     const updates = Object.entries(mapping).map(([label, wineId]) => 
-      supabase
+      client
         .from('wines')
         .update({ blind_label: label, revealed: true })
         .eq('id', wineId)
@@ -154,7 +155,7 @@ export const db = {
     await Promise.all(updates);
 
     // Fetch all updated wines for this session
-    const { data, error } = await supabase
+    const { data, error } = await client
       .from('wines')
       .select('*')
       .eq('session_id', sessionId);
@@ -164,8 +165,8 @@ export const db = {
   },
 
   getVotes: async (sessionId: string): Promise<Vote[]> => {
-    if (isMockMode || !supabase) return mockDB.getVotes(sessionId);
-    const { data, error } = await supabase
+    const client = ensureClient();
+    const { data, error } = await client
       .from('votes')
       .select('*')
       .eq('session_id', sessionId);
@@ -175,9 +176,9 @@ export const db = {
   },
 
   submitVote: async (vote: Omit<Vote, 'id'>): Promise<Vote> => {
-    if (isMockMode || !supabase) return mockDB.submitVote(vote);
+    const client = ensureClient();
     // Check for existing vote to overwrite
-    const { data: existing, error: existErr } = await supabase
+    const { data: existing, error: existErr } = await client
       .from('votes')
       .select('id')
       .eq('session_id', vote.session_id)
@@ -188,7 +189,7 @@ export const db = {
     if (existErr) throw existErr;
 
     if (existing) {
-      const { data, error } = await supabase
+      const { data, error } = await client
         .from('votes')
         .update(vote)
         .eq('id', existing.id)
@@ -197,7 +198,7 @@ export const db = {
       if (error) throw error;
       return data;
     } else {
-      const { data, error } = await supabase
+      const { data, error } = await client
         .from('votes')
         .insert(vote)
         .select()
@@ -207,11 +208,22 @@ export const db = {
     }
   },
 
-  getHistory: async (): Promise<HistoricalTasting[]> => {
-    return mockDB.getHistory();
+  getHistory: (): HistoricalTasting[] => {
+    const local = localStorage.getItem('WINE_TASTING_HISTORY');
+    if (!local) {
+      localStorage.setItem('WINE_TASTING_HISTORY', JSON.stringify(HISTORICAL_SESSIONS));
+      return HISTORICAL_SESSIONS;
+    }
+    try {
+      return JSON.parse(local);
+    } catch {
+      return HISTORICAL_SESSIONS;
+    }
   },
 
-  addHistorySession: async (session: HistoricalTasting): Promise<void> => {
-    mockDB.addHistorySession(session);
+  addHistorySession: (session: HistoricalTasting): void => {
+    const history = db.getHistory();
+    const updated = [session, ...history.filter(s => s.id !== session.id)];
+    localStorage.setItem('WINE_TASTING_HISTORY', JSON.stringify(updated));
   }
 };

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { db, isMockMode } from './utils/supabase';
-import { WineSession, Wine, Vote, initMockDB } from './utils/mockData';
+import { db, supabase } from './utils/supabase';
+import { WineSession, Wine, Vote } from './utils/mockData';
 import IntakeForm from './components/IntakeForm';
 import Brackets from './components/Brackets';
 import VotingSlider from './components/VotingSlider';
@@ -10,10 +10,6 @@ import Settings from './components/Settings';
 import { Wine as WineIcon, Trophy, Layers, ClipboardList, History as HistoryIcon, Settings as SettingsIcon, PlusCircle, AlertCircle, RefreshCw } from 'lucide-react';
 
 export default function App() {
-  // Initialize mock DB on load
-  useEffect(() => {
-    initMockDB();
-  }, []);
 
   // Profile States
   const [voterName, setVoterName] = useState(() => localStorage.getItem('WINE_TASTING_VOTER_NAME') || '');
@@ -333,7 +329,7 @@ export default function App() {
               Grand Taste Tourney
             </h1>
             <p className="text-[10px] text-slate-500 uppercase tracking-widest font-mono font-bold">
-              {isMockMode ? "Mock Sandbox Mode" : "Multiplayer Active"}
+              {supabase ? "Multiplayer Connected" : "Connection Pending (Check Settings)"}
             </p>
           </div>
         </div>

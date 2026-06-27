@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { isMockMode } from '../utils/supabase';
+import { supabase } from '../utils/supabase';
 import { Save, Link as LinkIcon, Database, CheckCircle, Shield, User, Share2 } from 'lucide-react';
 
 interface SettingsProps {
@@ -15,6 +15,7 @@ export default function Settings({
   onUpdateVoterName,
   onUpdateHostMode
 }: SettingsProps) {
+  const isConnected = !!supabase;
   const [name, setName] = useState(voterName);
   const [sbUrl, setSbUrl] = useState(() => localStorage.getItem('WINE_TASTING_SB_URL') || '');
   const [sbKey, setSbKey] = useState(() => localStorage.getItem('WINE_TASTING_SB_KEY') || '');
@@ -183,11 +184,11 @@ export default function Settings({
             Database Configuration
           </h3>
           <span className={`text-[10px] uppercase font-bold tracking-wider px-2.5 py-0.5 rounded-full border ${
-            isMockMode 
+            !isConnected 
               ? 'bg-slate-950 border-slate-850 text-slate-400' 
               : 'bg-emerald-950/40 border-emerald-900/30 text-emerald-400'
           }`}>
-            {isMockMode ? 'Local Storage Mode' : 'Supabase Multiplayer Connected'}
+            {!isConnected ? 'Not Connected (Setup Required)' : 'Supabase Multiplayer Connected'}
           </span>
         </div>
 
@@ -242,7 +243,7 @@ export default function Settings({
         </form>
 
         {/* Shareable Link (Multiplayer Invitation) */}
-        {!isMockMode && shareLink && (
+        {isConnected && shareLink && (
           <div className="mt-6 border-t border-slate-850 pt-6 space-y-3">
             <h4 className="text-sm font-semibold text-slate-350 flex items-center gap-1.5">
               <Share2 className="w-4 h-4 text-wine-400" /> Share Room Invitation
