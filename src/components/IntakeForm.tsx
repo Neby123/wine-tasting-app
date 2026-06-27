@@ -74,7 +74,7 @@ export default function IntakeForm({
       <div className="text-center max-w-xl mx-auto space-y-2">
         <h2 className="text-3xl font-bold font-serif text-wine-100">Wine Registry</h2>
         <p className="text-slate-400 text-sm">
-          Every couple brings 2-3 bottles. Log your contributions below. Wine details are kept hidden from other tasters to preserve the blind taste test!
+          Every participant logs their bottle details below. Wine details are kept hidden from other tasters to preserve the blind taste test!
         </p>
       </div>
 
@@ -89,7 +89,7 @@ export default function IntakeForm({
             <form onSubmit={handleSubmit} className="space-y-4">
               <div>
                 <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1">
-                  Contributor Name (You / Couple)
+                  Contributor Name (You)
                 </label>
                 <div className="relative">
                   <span className="absolute inset-y-0 left-0 pl-3 flex items-center text-slate-500">

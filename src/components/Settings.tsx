@@ -20,10 +20,32 @@ export default function Settings({
   const [sbKey, setSbKey] = useState(() => localStorage.getItem('WINE_TASTING_SB_KEY') || '');
   const [savedMsg, setSavedMsg] = useState('');
   const [linkCopied, setLinkCopied] = useState(false);
+  const [participants, setParticipants] = useState<string[]>(() => {
+    const stored = localStorage.getItem('WINE_TASTING_PARTICIPANTS');
+    if (stored) {
+      try {
+        return JSON.parse(stored);
+      } catch (e) {}
+    }
+    const defaultList = ['Ben', 'Monica', 'Jack', 'Alexcia', 'David', 'Abby'];
+    localStorage.setItem('WINE_TASTING_PARTICIPANTS', JSON.stringify(defaultList));
+    return defaultList;
+  });
 
   const handleSaveProfile = (e: React.FormEvent) => {
     e.preventDefault();
-    onUpdateVoterName(name.trim());
+    const trimmedName = name.trim();
+    if (!trimmedName) return;
+
+    onUpdateVoterName(trimmedName);
+
+    // Save name to participants list if it's new
+    if (!participants.includes(trimmedName)) {
+      const updated = [...participants, trimmedName];
+      setParticipants(updated);
+      localStorage.setItem('WINE_TASTING_PARTICIPANTS', JSON.stringify(updated));
+    }
+
     setSavedMsg("Profile updated successfully!");
     setTimeout(() => setSavedMsg(''), 2000);
   };
@@ -86,18 +108,42 @@ export default function Settings({
         </h3>
         
         <form onSubmit={handleSaveProfile} className="space-y-4">
-          <div>
-            <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1">
-              Your Name / Couple Name
-            </label>
-            <input
-              type="text"
-              required
-              placeholder="e.g. Dave & Barb"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              className="w-full px-3 py-2 bg-slate-950 border border-slate-800 focus:border-wine-500 rounded-lg text-slate-255 text-sm focus:outline-none focus:ring-1 focus:ring-wine-500"
-            />
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1">
+                Select Previous Participant
+              </label>
+              <select
+                onChange={(e) => {
+                  if (e.target.value) {
+                    setName(e.target.value);
+                  }
+                }}
+                value={participants.includes(name) ? name : ""}
+                className="w-full px-3 py-2 bg-slate-950 border border-slate-800 focus:border-wine-500 rounded-lg text-slate-200 text-sm focus:outline-none focus:ring-1 focus:ring-wine-500"
+              >
+                <option value="">-- Choose Name or Type &rarr; --</option>
+                {participants.map((p) => (
+                  <option key={p} value={p}>
+                    {p}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1">
+                Your Name / Participant Name
+              </label>
+              <input
+                type="text"
+                required
+                placeholder="e.g. Ben"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                className="w-full px-3 py-2 bg-slate-950 border border-slate-800 focus:border-wine-500 rounded-lg text-slate-200 text-sm focus:outline-none focus:ring-1 focus:ring-wine-500 font-semibold"
+              />
+            </div>
           </div>
 
           <div className="flex items-center justify-between p-3.5 bg-slate-950/60 border border-slate-850 rounded-xl">
@@ -147,7 +193,7 @@ export default function Settings({
 
         <form onSubmit={handleSaveDB} className="space-y-4">
           <p className="text-xs text-slate-400 leading-relaxed">
-            By default, data is saved directly in your browser (LocalStorage). To synchronize scoring in real-time across multiple couples' phones, enter your free Supabase credentials below. Paste the SQL setup script from <code className="text-wine-300 bg-slate-950 px-1 py-0.5 rounded border border-slate-900">schema.sql</code> into your Supabase project dashboard first.
+            By default, data is saved directly in your browser (LocalStorage). To synchronize scoring in real-time across multiple participants' devices, enter your free Supabase credentials below. Paste the SQL setup script from <code className="text-wine-300 bg-slate-950 px-1 py-0.5 rounded border border-slate-900">schema.sql</code> into your Supabase project dashboard first.
           </p>
 
           <div>

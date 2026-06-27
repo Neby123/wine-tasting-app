@@ -184,6 +184,9 @@ export const initMockDB = () => {
   if (!localStorage.getItem(LS_KEYS.VOTES)) {
     saveToLS(LS_KEYS.VOTES, [] as Vote[]);
   }
+  if (!localStorage.getItem('WINE_TASTING_PARTICIPANTS')) {
+    saveToLS('WINE_TASTING_PARTICIPANTS', ['Ben', 'Monica', 'Jack', 'Alexcia', 'David', 'Abby']);
+  }
   
   const existingHistory = localStorage.getItem(LS_KEYS.HISTORY);
   if (!existingHistory) {

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Vote } from '../utils/mockData';
-import { ChevronLeft, ChevronRight, ThumbsUp, Scale, Edit3 } from 'lucide-react';
+import { ChevronLeft, ChevronRight, ThumbsUp, Scale, Edit3, AlertCircle } from 'lucide-react';
 
 interface VotingSliderProps {
   matchId: string;
@@ -218,6 +218,16 @@ export default function VotingSlider({
             <p className="text-xs text-slate-500 mt-1 font-mono">
               Margin: {sliderVal === 50 ? "Even" : `${Math.abs(50 - sliderVal)}% preference`} (Value: {sliderVal})
             </p>
+
+            {sliderVal === 50 && (
+              <div className="mt-4 max-w-md mx-auto bg-amber-950/20 border border-amber-900/30 rounded-xl p-3 flex items-start gap-2.5 text-xs text-amber-300 text-left animate-pulse">
+                <AlertCircle className="w-4 h-4 shrink-0 text-amber-400 mt-0.5" />
+                <div className="space-y-0.5">
+                  <p className="font-bold">Matchup cannot end in a tie!</p>
+                  <p className="text-slate-400">Please nudge the slider slightly left (Wine {wine1Label}) or right (Wine {wine2Label}) to indicate your preference.</p>
+                </div>
+              </div>
+            )}
           </div>
         </div>
 
@@ -233,20 +243,24 @@ export default function VotingSlider({
           
           <button
             type="submit"
-            disabled={isSubmitting}
+            disabled={isSubmitting || sliderVal === 50}
             className={`py-2.5 px-8 text-white font-semibold rounded-lg text-sm shadow-lg transition-all ${
-              success 
-                ? 'bg-emerald-600 hover:bg-emerald-500 shadow-emerald-950/20' 
-                : 'bg-gradient-to-r from-wine-850 to-wine-600 hover:from-wine-700 hover:to-wine-500 shadow-wine-950/20'
+              sliderVal === 50
+                ? 'bg-slate-800 text-slate-500 border border-slate-700 cursor-not-allowed shadow-none'
+                : success 
+                  ? 'bg-emerald-600 hover:bg-emerald-500 shadow-emerald-950/20' 
+                  : 'bg-gradient-to-r from-wine-850 to-wine-600 hover:from-wine-700 hover:to-wine-500 shadow-wine-950/20'
             }`}
           >
             {isSubmitting 
               ? "Saving..." 
               : success 
                 ? "Vote Logged!" 
-                : existingVote 
-                  ? "Update Vote" 
-                  : "Submit Vote"}
+                : sliderVal === 50
+                  ? "Tie Not Allowed"
+                  : existingVote 
+                    ? "Update Vote" 
+                    : "Submit Vote"}
           </button>
         </div>
       </form>

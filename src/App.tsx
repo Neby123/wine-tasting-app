@@ -287,7 +287,7 @@ export default function App() {
   // Vote Actions
   const handleSelectMatch = (matchId: string, wine1: string, wine2: string) => {
     if (!voterName) {
-      alert("Please set your Name/Couple name in settings before tasting!");
+      alert("Please set your Name/Participant name in settings before tasting!");
       setCurrentTab('settings');
       return;
     }
@@ -432,7 +432,7 @@ export default function App() {
               <WineIcon className="w-16 h-16 text-wine-400 mx-auto drop-shadow-[0_0_15px_rgba(135,28,54,0.3)] animate-pulse" />
               <h2 className="text-3xl font-bold font-serif text-slate-100">Initialize Tasting Session</h2>
               <p className="text-sm text-slate-400">
-                Ready to taste? Start a session to invite couples and log wines.
+                Ready to taste? Start a session to invite participants and log wines.
               </p>
             </div>
 
@@ -457,7 +457,7 @@ export default function App() {
                     <AlertCircle className="w-4 h-4 shrink-0 text-amber-400" />
                     <div className="space-y-1">
                       <p className="font-semibold mb-0.5">Profile Name Required</p>
-                      <p className="text-slate-400">Set your name/couple name in settings first so the app can register your wine contributions.</p>
+                      <p className="text-slate-400">Set your name in settings first so the app can register your wine contributions.</p>
                       <button
                         type="button"
                         onClick={() => setCurrentTab('settings')}
