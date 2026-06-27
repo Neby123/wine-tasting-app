@@ -146,55 +146,6 @@ export const HISTORICAL_SESSIONS: HistoricalTasting[] = [
   ],
   "votes": [
     {
-      "voter_name": "Ben",
-      "match_id": "Q1",
-      "wine_1_label": "A",
-      "wine_2_label": "H",
-      "slider_value": 100
-    },
-    {
-      "voter_name": "Ben",
-      "match_id": "Q2",
-      "wine_1_label": "B",
-      "wine_2_label": "G",
-      "slider_value": 0
-    },
-    {
-      "voter_name": "Ben",
-      "match_id": "Q3",
-      "wine_1_label": "D",
-      "wine_2_label": "E",
-      "slider_value": 0
-    },
-    {
-      "voter_name": "Ben",
-      "match_id": "Q4",
-      "wine_1_label": "C",
-      "wine_2_label": "F",
-      "slider_value": 100
-    },
-    {
-      "voter_name": "Ben",
-      "match_id": "S1",
-      "wine_1_label": "H",
-      "wine_2_label": "D",
-      "slider_value": 100
-    },
-    {
-      "voter_name": "Ben",
-      "match_id": "S2",
-      "wine_1_label": "B",
-      "wine_2_label": "F",
-      "slider_value": 100
-    },
-    {
-      "voter_name": "Ben",
-      "match_id": "F",
-      "wine_1_label": "D",
-      "wine_2_label": "F",
-      "slider_value": 0
-    },
-    {
       "voter_name": "Monica",
       "match_id": "Q1",
       "wine_1_label": "A",
@@ -1709,13 +1660,16 @@ export const initMockDB = () => {
   } else {
     try {
       const parsed = JSON.parse(existingHistory) as HistoricalTasting[];
-      // Overwrite if it contains the old mock dates, has the Best Value bug, or is missing the votes array
+      // Overwrite if it contains the old mock dates, has the Best Value bug, is missing the votes array, or has duplicate/test votes
       const hasPlaceholders = parsed.some(s => 
         (s.id === 'hist-chard-show' && (s.date === '2025-05-15' || s.winnerBroughtBy === 'Dave & Barb')) ||
         (s.id === 'hist-pinot-show' && s.bestValue.includes('California Heritage'))
       );
       const isMissingVotes = parsed.some(s => !s.votes || s.votes.length === 0);
-      if (hasPlaceholders || isMissingVotes) {
+      const hasDuplicateVotes = parsed.some(s => 
+        s.id === 'hist-chard-show' && s.votes && s.votes.filter(v => v.voter_name === 'Ben').length > 7
+      );
+      if (hasPlaceholders || isMissingVotes || hasDuplicateVotes) {
         saveToLS(LS_KEYS.HISTORY, HISTORICAL_SESSIONS);
       }
     } catch {
