@@ -263,11 +263,28 @@ export default function History({ voterName, onRefresh }: HistoryProps) {
                                       <div className="space-y-1.5 pt-1">
                                         {evaluations.map((ev, eIdx) => {
                                           const isWin = ev.score > 50;
+                                          const opponentWine = session.wines.find(w => w.blind_label === ev.opponent);
+                                          const opponentName = opponentWine ? opponentWine.name : `Wine ${ev.opponent}`;
+                                          
+                                          const roundNames: Record<string, string> = { 
+                                            Q1: 'Quarterfinal', 
+                                            Q2: 'Quarterfinal', 
+                                            Q3: 'Quarterfinal', 
+                                            Q4: 'Quarterfinal', 
+                                            S1: 'Semifinal', 
+                                            S2: 'Semifinal', 
+                                            F: 'Final' 
+                                          };
+                                          const roundName = roundNames[ev.matchId] || ev.matchId;
+
                                           return (
                                             <div key={eIdx} className="text-[10px] leading-relaxed bg-slate-950/40 p-2 rounded border border-slate-900/85 space-y-1">
-                                              <div className="flex justify-between font-semibold">
-                                                <span className="text-slate-400">{ev.matchId} vs {ev.opponent}</span>
-                                                <span className={isWin ? 'text-emerald-400' : 'text-slate-500 line-through'}>
+                                              <div className="flex justify-between items-start gap-2">
+                                                <div className="flex flex-col">
+                                                  <span className="text-slate-500 text-[8px] font-extrabold uppercase tracking-widest leading-none mb-0.5">{roundName}</span>
+                                                  <span className="text-slate-300 font-semibold line-clamp-1">vs {opponentName}</span>
+                                                </div>
+                                                <span className={`shrink-0 font-bold ${isWin ? 'text-emerald-400' : 'text-slate-500 line-through'}`}>
                                                   {isWin ? 'Win' : 'Loss'}
                                                 </span>
                                               </div>
