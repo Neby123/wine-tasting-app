@@ -3,12 +3,14 @@ import { HistoricalTasting, mockDB } from '../utils/mockData';
 import { Trophy, Calendar, DollarSign, Award, ChevronDown, ChevronUp, RefreshCw } from 'lucide-react';
 
 interface HistoryProps {
+  voterName: string;
   onRefresh?: () => void;
 }
 
-export default function History({ onRefresh }: HistoryProps) {
+export default function History({ voterName, onRefresh }: HistoryProps) {
   const [sessions, setSessions] = useState<HistoricalTasting[]>(() => mockDB.getHistory());
   const [expandedSessionId, setExpandedSessionId] = useState<string | null>(null);
+  const [selectedVoterName, setSelectedVoterName] = useState<Record<string, string>>({});
 
   const handleToggleExpand = (id: string) => {
     setExpandedSessionId(expandedSessionId === id ? null : id);
@@ -18,6 +20,29 @@ export default function History({ onRefresh }: HistoryProps) {
     const refreshed = mockDB.getHistory();
     setSessions(refreshed);
     if (onRefresh) onRefresh();
+  };
+
+  const getPersonalNotesForLabel = (label: string, voter: string, sessionVotes?: any[]) => {
+    if (!sessionVotes) return null;
+    const votes = sessionVotes.filter(v => 
+      v.voter_name.toLowerCase() === voter.toLowerCase() && 
+      (v.wine_1_label === label || v.wine_2_label === label)
+    );
+    if (votes.length === 0) return null;
+    
+    return votes.map(v => {
+      const isWine1 = v.wine_1_label === label;
+      const preferenceVal = isWine1 ? (100 - v.slider_value) : v.slider_value;
+      const notes = isWine1 ? v.notes_wine_1 : v.notes_wine_2;
+      const opponent = isWine1 ? v.wine_2_label : v.wine_1_label;
+      
+      return {
+        matchId: v.match_id,
+        opponent,
+        notes: notes?.trim(),
+        score: preferenceVal
+      };
+    });
   };
 
   return (
@@ -168,6 +193,109 @@ export default function History({ onRefresh }: HistoryProps) {
                     )}
                     <span>Second Place: <strong className="text-slate-400">{session.secondPlace}</strong></span>
                   </div>
+
+                  {/* Individual Tasting Journal Section */}
+                  {session.votes && session.votes.length > 0 && (() => {
+                    const uniqueVoters = Array.from(new Set(session.votes.map(v => v.voter_name))).sort();
+                    const activeVoter = selectedVoterName[session.id] || (uniqueVoters.includes(voterName) ? voterName : uniqueVoters[0] || "");
+                    
+                    return (
+                      <div className="border-t border-slate-900 pt-6 mt-6 space-y-4">
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                          <div className="space-y-0.5">
+                            <h4 className="text-sm font-bold text-wine-200 font-serif">Historical Tasting Journal</h4>
+                            <p className="text-xs text-slate-500">Review individual brackets, ratings, and notes logged during this session.</p>
+                          </div>
+                          
+                          {uniqueVoters.length > 0 && (
+                            <div className="flex items-center gap-2">
+                              <span className="text-xs text-slate-400 font-medium">Taster Journal for:</span>
+                              <select
+                                value={activeVoter}
+                                onChange={(e) => setSelectedVoterName(prev => ({ ...prev, [session.id]: e.target.value }))}
+                                className="px-2.5 py-1 bg-slate-950 border border-slate-850 rounded-lg text-slate-200 text-xs focus:outline-none focus:ring-1 focus:ring-wine-500 font-semibold"
+                              >
+                                {uniqueVoters.map(v => (
+                                  <option key={v} value={v}>{v}</option>
+                                ))}
+                              </select>
+                            </div>
+                          )}
+                        </div>
+
+                        {activeVoter ? (
+                          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                            {['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'].map((label) => {
+                              const wineDetail = session.wines.find(w => w.blind_label === label);
+                              const evaluations = getPersonalNotesForLabel(label, activeVoter, session.votes);
+                              
+                              return (
+                                <div 
+                                  key={label}
+                                  className={`glass-panel rounded-xl p-4.5 space-y-3 flex flex-col justify-between min-h-[140px] relative overflow-hidden transition-all duration-300 ${
+                                    evaluations ? 'border-wine-800/20 bg-slate-900/30' : 'opacity-30 bg-slate-950/15'
+                                  }`}
+                                >
+                                  <div className="space-y-2.5">
+                                    <div className="flex justify-between items-start">
+                                      <span className="w-7 h-7 rounded-full bg-wine-900/60 border border-wine-850 text-white font-extrabold font-serif flex items-center justify-center text-xs shadow-inner">
+                                        {label}
+                                      </span>
+                                      {evaluations && evaluations.length > 0 && (
+                                        <span className="text-[9px] bg-slate-950 px-2 py-0.5 border border-slate-850 text-slate-400 rounded-full font-mono font-semibold">
+                                          {evaluations.length} {evaluations.length === 1 ? 'Match' : 'Matches'}
+                                        </span>
+                                      )}
+                                    </div>
+
+                                    <div>
+                                      <h5 className="text-xs font-bold text-wine-200 font-serif line-clamp-1">
+                                        {wineDetail ? wineDetail.name : `Wine ${label}`}
+                                      </h5>
+                                      {wineDetail && (
+                                        <p className="text-[10px] text-slate-500 font-medium">
+                                          ${wineDetail.price.toFixed(2)} • By {wineDetail.submitted_by}
+                                        </p>
+                                      )}
+                                    </div>
+
+                                    {evaluations && evaluations.length > 0 ? (
+                                      <div className="space-y-1.5 pt-1">
+                                        {evaluations.map((ev, eIdx) => {
+                                          const isWin = ev.score > 50;
+                                          return (
+                                            <div key={eIdx} className="text-[10px] leading-relaxed bg-slate-950/40 p-2 rounded border border-slate-900/85 space-y-1">
+                                              <div className="flex justify-between font-semibold">
+                                                <span className="text-slate-400">{ev.matchId} vs {ev.opponent}</span>
+                                                <span className={isWin ? 'text-emerald-400' : 'text-slate-500 line-through'}>
+                                                  {isWin ? 'Win' : 'Loss'}
+                                                </span>
+                                              </div>
+                                              {ev.notes && (
+                                                <p className="text-slate-450 italic mt-0.5 font-sans">
+                                                  "{ev.notes}"
+                                                </p>
+                                              )}
+                                            </div>
+                                          );
+                                        })}
+                                      </div>
+                                    ) : (
+                                      <p className="text-[10px] text-slate-500 italic">No matches logged.</p>
+                                    )}
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        ) : (
+                          <div className="text-center py-6 text-xs text-slate-500 bg-slate-950/30 border border-slate-900 rounded-xl">
+                            Select a taster from the dropdown to display their journal.
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })()}
 
                 </div>
               )}

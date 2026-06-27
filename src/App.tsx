@@ -415,7 +415,7 @@ export default function App() {
         ) : (currentTab === 'settings' || currentTab === 'history') ? (
           /* Settings and History are accessible even without active session */
           <div className="space-y-6">
-            {currentTab === 'history' && <History onRefresh={loadData} />}
+            {currentTab === 'history' && <History voterName={voterName} onRefresh={loadData} />}
             {currentTab === 'settings' && (
               <Settings
                 voterName={voterName}
