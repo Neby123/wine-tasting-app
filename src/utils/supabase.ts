@@ -1,5 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
-import { WineSession, Wine, Vote, HistoricalTasting, HISTORICAL_SESSIONS } from './mockData';
+import { WineSession, Wine, Vote, HistoricalTasting } from './mockData';
 
 const getSBConfig = () => {
   // Check URL params first (useful for guest invite links)
@@ -27,8 +27,35 @@ const getSBConfig = () => {
   return null;
 };
 
+// Synchronously ensure voter token exists
+const getOrGenerateVoterToken = () => {
+  let token = localStorage.getItem('WINE_TASTING_VOTER_TOKEN');
+  if (!token) {
+    if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+      token = crypto.randomUUID();
+    } else {
+      token = 'voter-' + Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
+    }
+    localStorage.setItem('WINE_TASTING_VOTER_TOKEN', token);
+  }
+  return token;
+};
+
+const getHeaders = () => {
+  return {
+    'x-voter-token': getOrGenerateVoterToken(),
+    'x-host-passcode': localStorage.getItem('WINE_TASTING_HOST_PASSCODE') || ''
+  };
+};
+
 const config = getSBConfig();
-export const supabase = config ? createClient(config.url, config.key) : null;
+export const supabase = config 
+  ? createClient(config.url, config.key, {
+      global: {
+        headers: getHeaders()
+      }
+    })
+  : null;
 
 const ensureClient = () => {
   if (!supabase) {
@@ -208,22 +235,55 @@ export const db = {
     }
   },
 
-  getHistory: (): HistoricalTasting[] => {
-    const local = localStorage.getItem('WINE_TASTING_HISTORY');
-    if (!local) {
-      localStorage.setItem('WINE_TASTING_HISTORY', JSON.stringify(HISTORICAL_SESSIONS));
-      return HISTORICAL_SESSIONS;
-    }
-    try {
-      return JSON.parse(local);
-    } catch {
-      return HISTORICAL_SESSIONS;
-    }
+  getHistory: async (): Promise<HistoricalTasting[]> => {
+    const client = ensureClient();
+    const { data, error } = await client
+      .from('history')
+      .select('*')
+      .order('date', { ascending: false });
+
+    if (error) throw error;
+    
+    return (data || []).map(row => ({
+      id: row.id,
+      name: row.name,
+      date: row.date,
+      winnerName: row.winner_name,
+      winnerPrice: Number(row.winner_price),
+      winnerBroughtBy: row.winner_brought_by,
+      winesCount: row.wines_count,
+      groupWinner: row.group_winner,
+      secondPlace: row.second_place,
+      bestValue: row.best_value,
+      giantKiller: row.giant_killer || undefined,
+      wines: row.wines,
+      votes: row.votes
+    }));
   },
 
-  addHistorySession: (session: HistoricalTasting): void => {
-    const history = db.getHistory();
-    const updated = [session, ...history.filter(s => s.id !== session.id)];
-    localStorage.setItem('WINE_TASTING_HISTORY', JSON.stringify(updated));
+  addHistorySession: async (session: HistoricalTasting): Promise<void> => {
+    const client = ensureClient();
+    
+    const dbRow = {
+      id: session.id,
+      name: session.name,
+      date: session.date,
+      winner_name: session.winnerName,
+      winner_price: session.winnerPrice,
+      winner_brought_by: session.winnerBroughtBy,
+      wines_count: session.winesCount,
+      group_winner: session.groupWinner,
+      second_place: session.secondPlace,
+      best_value: session.bestValue,
+      giant_killer: session.giantKiller || null,
+      wines: session.wines,
+      votes: session.votes || []
+    };
+
+    const { error } = await client
+      .from('history')
+      .upsert(dbRow);
+
+    if (error) throw error;
   }
 };

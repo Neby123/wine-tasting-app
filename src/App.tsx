@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { db, supabase } from './utils/supabase';
-import { WineSession, Wine, Vote } from './utils/mockData';
+import { WineSession, Wine, Vote, HistoricalTasting } from './utils/mockData';
 import IntakeForm from './components/IntakeForm';
 import Brackets from './components/Brackets';
 import VotingSlider from './components/VotingSlider';
@@ -58,22 +58,130 @@ export default function App() {
     }
   };
 
-  // Initial load
+  // Initial load & one-time history migration
   useEffect(() => {
     loadData();
+
+    const runMigration = async () => {
+      if (!supabase) return;
+      const localHistoryKey = 'WINE_TASTING_HISTORY';
+      const mockHistoryKey = 'WINE_TASTING_MOCK_HISTORY';
+      const localDataStr = localStorage.getItem(localHistoryKey) || localStorage.getItem(mockHistoryKey);
+      if (!localDataStr) return;
+
+      try {
+        const localHistory = JSON.parse(localDataStr) as HistoricalTasting[];
+        if (!Array.isArray(localHistory) || localHistory.length === 0) return;
+
+        const { data: existingRows, error } = await supabase
+          .from('history')
+          .select('id');
+
+        if (error) {
+          console.warn("History migration check failed:", error);
+          return;
+        }
+
+        const existingIds = new Set((existingRows || []).map(r => r.id));
+        const missingSessions = localHistory.filter(s => !existingIds.has(s.id));
+
+        if (missingSessions.length > 0) {
+          console.log(`Migrating ${missingSessions.length} sessions from localStorage to Supabase...`);
+          for (const session of missingSessions) {
+            if (!session.votes) {
+              session.votes = [];
+            }
+            await db.addHistorySession(session);
+          }
+          console.log("Migration complete!");
+        }
+      } catch (err) {
+        console.error("Migration failed:", err);
+      }
+    };
+
+    runMigration();
   }, []);
 
-  // Poll for updates in background (multiplayer synchronization)
+  // Supabase Realtime subscriptions for live multiplayer synchronization
+  useEffect(() => {
+    if (!activeSession || activeSession.status === 'completed') return;
+    const client = supabase;
+    if (!client) return;
+
+    console.log(`Setting up Realtime subscriptions for active session: ${activeSession.id}`);
+    const channel = client.channel(`active-session-${activeSession.id}`);
+
+    channel
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'sessions',
+          filter: `id=eq.${activeSession.id}`
+        },
+        async (payload) => {
+          console.log('Realtime session update payload:', payload);
+          const newSession = payload.new as WineSession;
+          if (!newSession || newSession.status === 'completed') {
+            setActiveSession(null);
+            setWines([]);
+            setVotes([]);
+          } else {
+            setActiveSession(newSession);
+          }
+        }
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'wines',
+          filter: `session_id=eq.${activeSession.id}`
+        },
+        async () => {
+          console.log('Realtime wines update detected');
+          const updatedWines = await db.getWines(activeSession.id);
+          setWines(updatedWines);
+        }
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'votes',
+          filter: `session_id=eq.${activeSession.id}`
+        },
+        async () => {
+          console.log('Realtime votes update detected');
+          const updatedVotes = await db.getVotes(activeSession.id);
+          setVotes(updatedVotes);
+        }
+      )
+      .subscribe((status, err) => {
+        console.log(`Realtime channel status: ${status}`, err);
+      });
+
+    return () => {
+      console.log('Cleaning up Realtime channel');
+      client.removeChannel(channel);
+    };
+  }, [activeSession?.id]);
+
+  // Fallback polling (every 10 seconds) as a safety net
   useEffect(() => {
     const timer = setInterval(() => {
-      // Only poll if we have an active session in progress
       if (activeSession && activeSession.status !== 'completed') {
+        console.log('Fallback polling for updates...');
         loadData();
       }
-    }, 3000);
+    }, 10000);
 
     return () => clearInterval(timer);
-  }, [activeSession]);
+  }, [activeSession?.id]);
 
   // Profile Save Actions
   const handleUpdateVoterName = (name: string) => {
@@ -245,6 +353,15 @@ export default function App() {
           blind_label: w.blind_label || undefined,
           score: w.score,
           wins: w.wins
+        })),
+        votes: votes.map(v => ({
+          voter_name: v.voter_name,
+          match_id: v.match_id,
+          wine_1_label: v.wine_1_label,
+          wine_2_label: v.wine_2_label,
+          slider_value: v.slider_value,
+          notes_wine_1: v.notes_wine_1 || undefined,
+          notes_wine_2: v.notes_wine_2 || undefined
         }))
       };
 

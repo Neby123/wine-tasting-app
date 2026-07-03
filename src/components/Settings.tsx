@@ -21,6 +21,7 @@ export default function Settings({
   const [sbKey, setSbKey] = useState(() => localStorage.getItem('WINE_TASTING_SB_KEY') || '');
   const [savedMsg, setSavedMsg] = useState('');
   const [linkCopied, setLinkCopied] = useState(false);
+  const [hostPasscode, setHostPasscode] = useState(() => localStorage.getItem('WINE_TASTING_HOST_PASSCODE') || '');
   const [participants, setParticipants] = useState<string[]>(() => {
     const stored = localStorage.getItem('WINE_TASTING_PARTICIPANTS');
     if (stored) {
@@ -46,6 +47,9 @@ export default function Settings({
       setParticipants(updated);
       localStorage.setItem('WINE_TASTING_PARTICIPANTS', JSON.stringify(updated));
     }
+
+    // Save host passcode to localStorage
+    localStorage.setItem('WINE_TASTING_HOST_PASSCODE', hostPasscode.trim());
 
     setSavedMsg("Profile updated successfully!");
     setTimeout(() => setSavedMsg(''), 2000);
@@ -166,6 +170,24 @@ export default function Settings({
               <span className="w-4 h-4 rounded-full bg-white shadow-md transform" />
             </button>
           </div>
+
+          {isHost && (
+            <div className="p-3.5 bg-slate-950/40 border border-slate-850 rounded-xl space-y-2">
+              <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider">
+                Host Passcode
+              </label>
+              <input
+                type="password"
+                placeholder="Enter host passcode (default: 1234)"
+                value={hostPasscode}
+                onChange={(e) => setHostPasscode(e.target.value)}
+                className="w-full px-3 py-2 bg-slate-950 border border-slate-800 focus:border-wine-500 rounded-lg text-slate-200 text-sm focus:outline-none focus:ring-1 focus:ring-wine-500 font-mono"
+              />
+              <p className="text-[10px] text-slate-500">
+                Required for host operations like settling matchups and revealing bottles.
+              </p>
+            </div>
+          )}
 
           <button
             type="submit"

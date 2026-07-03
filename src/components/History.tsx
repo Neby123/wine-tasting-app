@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { HistoricalTasting } from '../utils/mockData';
 import { db } from '../utils/supabase';
 import { Trophy, Calendar, DollarSign, Award, ChevronDown, ChevronUp, RefreshCw } from 'lucide-react';
@@ -9,17 +9,33 @@ interface HistoryProps {
 }
 
 export default function History({ voterName, onRefresh }: HistoryProps) {
-  const [sessions, setSessions] = useState<HistoricalTasting[]>(() => db.getHistory());
+  const [sessions, setSessions] = useState<HistoricalTasting[]>([]);
+  const [loading, setLoading] = useState(true);
   const [expandedSessionId, setExpandedSessionId] = useState<string | null>(null);
   const [selectedVoterName, setSelectedVoterName] = useState<Record<string, string>>({});
+
+  const loadHistoryData = async () => {
+    setLoading(true);
+    try {
+      const data = await db.getHistory();
+      setSessions(data);
+    } catch (err) {
+      console.error("Error loading history:", err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadHistoryData();
+  }, []);
 
   const handleToggleExpand = (id: string) => {
     setExpandedSessionId(expandedSessionId === id ? null : id);
   };
 
-  const handleRefresh = () => {
-    const refreshed = db.getHistory();
-    setSessions(refreshed);
+  const handleRefresh = async () => {
+    await loadHistoryData();
     if (onRefresh) onRefresh();
   };
 
@@ -64,8 +80,17 @@ export default function History({ voterName, onRefresh }: HistoryProps) {
         </button>
       </div>
 
-      <div className="space-y-4">
-        {sessions.map((session) => {
+      {loading ? (
+        <div className="flex justify-center items-center py-12">
+          <RefreshCw className="w-8 h-8 text-wine-500 animate-spin" />
+        </div>
+      ) : sessions.length === 0 ? (
+        <div className="glass-panel rounded-2xl p-8 text-center text-slate-500">
+          No historical wine tasting sessions found in the database.
+        </div>
+      ) : (
+        <div className="space-y-4">
+          {sessions.map((session) => {
           const isExpanded = expandedSessionId === session.id;
           
           // Sort participating wines for this session
@@ -319,8 +344,9 @@ export default function History({ voterName, onRefresh }: HistoryProps) {
               )}
             </div>
           );
-        })}
-      </div>
+          })}
+        </div>
+      )}
     </div>
   );
 }
