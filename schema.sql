@@ -6,6 +6,7 @@ DROP TABLE IF EXISTS votes CASCADE;
 DROP TABLE IF EXISTS wines CASCADE;
 DROP TABLE IF EXISTS sessions CASCADE;
 DROP TABLE IF EXISTS history CASCADE;
+DROP TABLE IF EXISTS wishlist CASCADE;
 DROP TABLE IF EXISTS app_settings CASCADE;
 
 -- Sessions table: tracks individual tasting events (e.g. Day de Rosé, Rumble di Reds)
@@ -27,6 +28,10 @@ CREATE TABLE wines (
   producer TEXT,
   vintage TEXT,
   price NUMERIC NOT NULL,
+  varietal TEXT,
+  region TEXT,
+  country TEXT,
+  style TEXT, -- e.g. 'Red - Full-bodied', 'Rosé', 'Sparkling'
   tasting_notes TEXT,
   image_url TEXT,
   blind_label TEXT, -- 'A', 'B', 'C', ..., 'H'
@@ -153,6 +158,39 @@ USING (
 -- RLS Policies for history
 CREATE POLICY "Allow public read on history" ON history FOR SELECT USING (true);
 CREATE POLICY "Allow host write on history" ON history FOR ALL USING (check_is_host());
+
+-- Wishlist table: personal "buy again" lists, scoped per voter via voter_token
+CREATE TABLE wishlist (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  voter_name TEXT NOT NULL,
+  wine_name TEXT NOT NULL,
+  producer TEXT,
+  vintage TEXT,
+  varietal TEXT,
+  region TEXT,
+  price NUMERIC,
+  source_session_id UUID,
+  source_history_id TEXT,
+  note TEXT,
+  voter_token UUID NOT NULL DEFAULT COALESCE(
+    NULLIF(get_request_header('x-voter-token'), ''),
+    gen_random_uuid()::text
+  )::uuid,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now())
+);
+
+ALTER TABLE wishlist ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Allow public read on wishlist"   ON wishlist FOR SELECT USING (true);
+CREATE POLICY "Allow public insert on wishlist" ON wishlist FOR INSERT WITH CHECK (true);
+CREATE POLICY "Allow owner update on wishlist"  ON wishlist FOR UPDATE
+  USING (voter_token::text = get_request_header('x-voter-token'))
+  WITH CHECK (voter_token::text = get_request_header('x-voter-token'));
+CREATE POLICY "Allow owner delete on wishlist"  ON wishlist FOR DELETE
+  USING (
+    voter_token::text = get_request_header('x-voter-token')
+    OR check_is_host()
+  );
 
 -- Enable Realtime subscriptions on all active tables
 -- (If publication supabase_realtime doesn't exist, we fallback)

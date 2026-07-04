@@ -16,9 +16,40 @@ export interface Wine {
   producer?: string;
   vintage?: string;
   price: number;
+  varietal?: string;
+  region?: string;
+  country?: string;
+  style?: string; // e.g. 'Red - Full-bodied', 'Rosé', 'Sparkling'
   tasting_notes?: string;
   blind_label?: string; // 'A' through 'H'
   revealed: boolean;
+}
+
+// Result returned by the wine enrichment edge function (auto-fill)
+export interface WineEnrichment {
+  producer?: string;
+  varietal?: string;
+  region?: string;
+  country?: string;
+  style?: string;
+  estimated_price_usd?: number; // rough guide only — confirm against what you paid
+  descriptor?: string;          // one-line style summary
+}
+
+// Personal "buy again" wishlist entry
+export interface WishlistItem {
+  id: string;
+  voter_name: string;
+  wine_name: string;
+  producer?: string;
+  vintage?: string;
+  varietal?: string;
+  region?: string;
+  price?: number;
+  source_session_id?: string;
+  source_history_id?: string;
+  note?: string;
+  created_at?: string;
 }
 
 export interface Vote {
@@ -52,6 +83,10 @@ export interface HistoricalTasting {
     blind_label?: string;
     score: number; // Appreciation Index (0-100)
     wins: number;
+    varietal?: string;
+    region?: string;
+    country?: string;
+    style?: string;
   }[];
   votes?: {
     voter_name: string;

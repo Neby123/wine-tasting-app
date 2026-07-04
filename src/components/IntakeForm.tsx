@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Wine } from '../utils/mockData';
-import { Plus, Trash2, EyeOff, User, DollarSign, Wine as WineIcon } from 'lucide-react';
+import { db } from '../utils/supabase';
+import { Plus, Trash2, EyeOff, User, DollarSign, Wine as WineIcon, Sparkles, Loader2 } from 'lucide-react';
 
 interface IntakeFormProps {
   wines: Wine[];
@@ -10,6 +11,18 @@ interface IntakeFormProps {
   onDeleteWine: (id: string) => Promise<void>;
   onStartTasting: () => Promise<void>;
 }
+
+const STYLE_OPTIONS = [
+  'Red - Light',
+  'Red - Medium',
+  'Red - Full-bodied',
+  'White - Crisp',
+  'White - Rich',
+  'Rosé',
+  'Sparkling',
+  'Dessert',
+  'Fortified'
+];
 
 export default function IntakeForm({
   wines,
@@ -23,9 +36,48 @@ export default function IntakeForm({
   const [producer, setProducer] = useState('');
   const [vintage, setVintage] = useState('');
   const [price, setPrice] = useState('');
+  const [varietal, setVarietal] = useState('');
+  const [region, setRegion] = useState('');
+  const [country, setCountry] = useState('');
+  const [style, setStyle] = useState('');
   const [notes, setNotes] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [enriching, setEnriching] = useState(false);
+  const [enrichMsg, setEnrichMsg] = useState('');
+  const [priceIsEstimate, setPriceIsEstimate] = useState(false);
+
+  const handleAutofill = async () => {
+    if (!wineName.trim()) {
+      setErrorMsg('Enter at least a wine name before auto-filling.');
+      return;
+    }
+    setErrorMsg('');
+    setEnrichMsg('');
+    setEnriching(true);
+    try {
+      const info = await db.enrichWine(wineName.trim(), vintage.trim() || undefined, producer.trim() || undefined);
+      // Only fill fields the user hasn't already typed, so manual entries win.
+      if (info.producer && !producer.trim()) setProducer(info.producer);
+      if (info.varietal && !varietal.trim()) setVarietal(info.varietal);
+      if (info.region && !region.trim()) setRegion(info.region);
+      if (info.country && !country.trim()) setCountry(info.country);
+      if (info.style && !style.trim()) setStyle(info.style);
+      if (info.estimated_price_usd && !price.trim()) {
+        setPrice(String(info.estimated_price_usd));
+        setPriceIsEstimate(true);
+      }
+      setEnrichMsg(info.descriptor ? `Filled: ${info.descriptor}` : 'Details filled in. Review and adjust as needed.');
+    } catch (err: any) {
+      setEnrichMsg('');
+      setErrorMsg(
+        'Auto-fill unavailable: ' + (err?.message || 'the enrichment service is not reachable.') +
+        ' You can still enter details manually.'
+      );
+    } finally {
+      setEnriching(false);
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -54,6 +106,10 @@ export default function IntakeForm({
         producer: producer.trim() || undefined,
         vintage: vintage.trim() || undefined,
         price: priceNum,
+        varietal: varietal.trim() || undefined,
+        region: region.trim() || undefined,
+        country: country.trim() || undefined,
+        style: style.trim() || undefined,
         tasting_notes: notes.trim() || undefined
       });
       // Clear form
@@ -61,13 +117,22 @@ export default function IntakeForm({
       setProducer('');
       setVintage('');
       setPrice('');
+      setVarietal('');
+      setRegion('');
+      setCountry('');
+      setStyle('');
       setNotes('');
+      setEnrichMsg('');
+      setPriceIsEstimate(false);
     } catch (err: any) {
       setErrorMsg(err.message || "Failed to add wine");
     } finally {
       setIsSubmitting(false);
     }
   };
+
+  const inputClass =
+    "w-full px-3 py-2 bg-slate-950 border border-slate-800 focus:border-wine-500 rounded-lg text-slate-200 text-sm focus:outline-none focus:ring-1 focus:ring-wine-500";
 
   return (
     <div className="space-y-8 animate-fade-in">
@@ -85,7 +150,7 @@ export default function IntakeForm({
             <h3 className="text-lg font-semibold text-gold-300 flex items-center gap-2">
               <Plus className="w-5 h-5" /> Log a Bottle
             </h3>
-            
+
             <form onSubmit={handleSubmit} className="space-y-4">
               <div>
                 <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1">
@@ -117,7 +182,7 @@ export default function IntakeForm({
                   placeholder="e.g. Vintner's Reserve Chardonnay"
                   value={wineName}
                   onChange={(e) => setWineName(e.target.value)}
-                  className="w-full px-3 py-2 bg-slate-950 border border-slate-800 focus:border-wine-500 rounded-lg text-slate-200 text-sm focus:outline-none focus:ring-1 focus:ring-wine-500"
+                  className={inputClass}
                 />
               </div>
 
@@ -131,7 +196,7 @@ export default function IntakeForm({
                     placeholder="e.g. Kendall-Jackson"
                     value={producer}
                     onChange={(e) => setProducer(e.target.value)}
-                    className="w-full px-3 py-2 bg-slate-950 border border-slate-800 focus:border-wine-500 rounded-lg text-slate-200 text-sm focus:outline-none focus:ring-1 focus:ring-wine-500"
+                    className={inputClass}
                   />
                 </div>
                 <div>
@@ -143,7 +208,85 @@ export default function IntakeForm({
                     placeholder="e.g. 2021"
                     value={vintage}
                     onChange={(e) => setVintage(e.target.value)}
-                    className="w-full px-3 py-2 bg-slate-950 border border-slate-800 focus:border-wine-500 rounded-lg text-slate-200 text-sm focus:outline-none focus:ring-1 focus:ring-wine-500"
+                    className={inputClass}
+                  />
+                </div>
+              </div>
+
+              {/* Auto-fill: infer descriptive details from name + vintage */}
+              <div className="rounded-xl border border-wine-900/40 bg-wine-950/20 p-3 space-y-2">
+                <button
+                  type="button"
+                  onClick={handleAutofill}
+                  disabled={enriching || !wineName.trim()}
+                  className="w-full py-2 px-4 bg-gradient-to-r from-wine-800 to-wine-600 hover:from-wine-700 hover:to-wine-500 disabled:from-slate-800 disabled:to-slate-900 disabled:text-slate-500 text-white font-semibold rounded-lg text-sm transition-all flex items-center justify-center gap-2"
+                >
+                  {enriching ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
+                  {enriching ? 'Looking up…' : 'Auto-fill details'}
+                </button>
+                <p className="text-[10px] text-slate-500 leading-relaxed">
+                  Fills varietal, region, country &amp; style from the name. Price comes back only as a rough estimate — set it to what you actually paid, since value stats depend on it.
+                </p>
+                {enrichMsg && (
+                  <p className="text-[11px] text-emerald-300/90 flex items-start gap-1.5">
+                    <Sparkles className="w-3 h-3 mt-0.5 shrink-0" /> {enrichMsg}
+                  </p>
+                )}
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1">
+                    Varietal / Grape
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="e.g. Pinot Noir"
+                    value={varietal}
+                    onChange={(e) => setVarietal(e.target.value)}
+                    className={inputClass}
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1">
+                    Style
+                  </label>
+                  <select
+                    value={style}
+                    onChange={(e) => setStyle(e.target.value)}
+                    className={inputClass}
+                  >
+                    <option value="">— Select —</option>
+                    {STYLE_OPTIONS.map((s) => (
+                      <option key={s} value={s}>{s}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1">
+                    Region
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="e.g. Willamette Valley"
+                    value={region}
+                    onChange={(e) => setRegion(e.target.value)}
+                    className={inputClass}
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1">
+                    Country
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="e.g. USA"
+                    value={country}
+                    onChange={(e) => setCountry(e.target.value)}
+                    className={inputClass}
                   />
                 </div>
               </div>
@@ -151,6 +294,9 @@ export default function IntakeForm({
               <div>
                 <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1">
                   Price ($ USD) <span className="text-rose-400">*</span>
+                  {priceIsEstimate && (
+                    <span className="ml-2 text-[10px] text-amber-400 normal-case tracking-normal">estimate — set to what you paid</span>
+                  )}
                 </label>
                 <div className="relative">
                   <span className="absolute inset-y-0 left-0 pl-3 flex items-center text-slate-500">
@@ -163,8 +309,8 @@ export default function IntakeForm({
                     required
                     placeholder="24.99"
                     value={price}
-                    onChange={(e) => setPrice(e.target.value)}
-                    className="w-full pl-9 pr-3 py-2 bg-slate-950 border border-slate-800 focus:border-wine-500 rounded-lg text-slate-200 text-sm focus:outline-none focus:ring-1 focus:ring-wine-500"
+                    onChange={(e) => { setPrice(e.target.value); setPriceIsEstimate(false); }}
+                    className={`w-full pl-9 pr-3 py-2 bg-slate-950 border rounded-lg text-slate-200 text-sm focus:outline-none focus:ring-1 focus:ring-wine-500 ${priceIsEstimate ? 'border-amber-700/60' : 'border-slate-800 focus:border-wine-500'}`}
                   />
                 </div>
               </div>
@@ -178,7 +324,7 @@ export default function IntakeForm({
                   placeholder="Butter, oak, apple, crisp finish (will be revealed at the end!)"
                   value={notes}
                   onChange={(e) => setNotes(e.target.value)}
-                  className="w-full px-3 py-2 bg-slate-950 border border-slate-800 focus:border-wine-500 rounded-lg text-slate-200 text-sm focus:outline-none focus:ring-1 focus:ring-wine-500"
+                  className={inputClass}
                 />
               </div>
 
@@ -232,14 +378,20 @@ export default function IntakeForm({
                               <span className="font-semibold text-slate-200">{wine.name}</span>
                               {wine.vintage && <span className="text-xs bg-slate-800 px-2 py-0.5 rounded text-slate-400">{wine.vintage}</span>}
                             </div>
-                            <div className="text-xs text-slate-400 flex items-center gap-3">
+                            <div className="text-xs text-slate-400 flex flex-wrap items-center gap-x-3 gap-y-1">
                               <span>By: <strong className="text-slate-300">{wine.submitted_by}</strong></span>
                               <span>•</span>
                               <span className="text-amber-400 font-medium">${wine.price.toFixed(2)}</span>
-                              {wine.producer && (
+                              {wine.varietal && (
                                 <>
                                   <span>•</span>
-                                  <span>Prod: {wine.producer}</span>
+                                  <span className="text-slate-300">{wine.varietal}</span>
+                                </>
+                              )}
+                              {wine.region && (
+                                <>
+                                  <span>•</span>
+                                  <span>{wine.region}</span>
                                 </>
                               )}
                             </div>
@@ -276,12 +428,12 @@ export default function IntakeForm({
             {/* Host actions once exactly 8 wines are registered */}
             {isHost && (
               <div className="mt-6 border-t border-slate-800 pt-6 space-y-4">
-                <div className="bg-slate-950/60 border border-slate-850 rounded-xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div className="bg-slate-950/60 border border-slate-800 rounded-xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                   <div className="space-y-1">
-                    <p className="text-sm font-semibold text-slate-350">Host Launch Pad</p>
+                    <p className="text-sm font-semibold text-slate-300">Host Launch Pad</p>
                     <p className="text-xs text-slate-500">
-                      {wines.length === 8 
-                        ? "Ready to initiate! Please physically place the 8 bottles into paper bags A-H in a completely random order, keeping the assignments blind to everyone. Once bagged, click Generate Bracket to open voting." 
+                      {wines.length === 8
+                        ? "Ready to initiate! Please physically place the 8 bottles into paper bags A-H in a completely random order, keeping the assignments blind to everyone. Once bagged, click Generate Bracket to open voting."
                         : `Need exactly 8 wines to build the bracket (currently at ${wines.length}).`}
                     </p>
                   </div>

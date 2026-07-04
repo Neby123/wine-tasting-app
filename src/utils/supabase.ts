@@ -1,5 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
-import { WineSession, Wine, Vote, HistoricalTasting } from './mockData';
+import { WineSession, Wine, Vote, HistoricalTasting, WishlistItem, WineEnrichment } from './mockData';
 
 const getSBConfig = () => {
   // Check URL params first (useful for guest invite links)
@@ -285,5 +285,64 @@ export const db = {
       .upsert(dbRow);
 
     if (error) throw error;
+  },
+
+  // --- Wishlist ("buy again") ---------------------------------------------
+
+  getWishlist: async (voterName?: string): Promise<WishlistItem[]> => {
+    const client = ensureClient();
+    let query = client
+      .from('wishlist')
+      .select('*')
+      .order('created_at', { ascending: false });
+
+    if (voterName) {
+      query = query.eq('voter_name', voterName);
+    }
+
+    const { data, error } = await query;
+    if (error) throw error;
+    return (data || []) as WishlistItem[];
+  },
+
+  addWishlistItem: async (item: Omit<WishlistItem, 'id' | 'created_at'>): Promise<WishlistItem> => {
+    const client = ensureClient();
+    const { data, error } = await client
+      .from('wishlist')
+      .insert(item)
+      .select()
+      .single();
+    if (error) throw error;
+    return data as WishlistItem;
+  },
+
+  removeWishlistItem: async (id: string): Promise<void> => {
+    const client = ensureClient();
+    const { error } = await client
+      .from('wishlist')
+      .delete()
+      .eq('id', id);
+    if (error) throw error;
+  },
+
+  // --- Wine auto-fill (enrichment via Supabase Edge Function) --------------
+  // Calls the `enrich-wine` edge function, which asks an LLM to infer stable
+  // descriptive facts (varietal, region, country, style) from the name +
+  // vintage. Price is returned only as a rough estimate — the real price you
+  // paid at your store is what drives the value stats, so confirm it manually.
+  enrichWine: async (
+    name: string,
+    vintage?: string,
+    producer?: string
+  ): Promise<WineEnrichment> => {
+    const client = ensureClient();
+    const { data, error } = await client.functions.invoke('enrich-wine', {
+      body: { name, vintage, producer }
+    });
+    if (error) throw error;
+    if (!data || typeof data !== 'object') {
+      throw new Error('Auto-fill returned no data.');
+    }
+    return data as WineEnrichment;
   }
 };

@@ -7,7 +7,9 @@ import VotingSlider from './components/VotingSlider';
 import Dashboard from './components/Dashboard';
 import History from './components/History';
 import Settings from './components/Settings';
-import { Wine as WineIcon, Trophy, Layers, ClipboardList, History as HistoryIcon, Settings as SettingsIcon, PlusCircle, AlertCircle, RefreshCw } from 'lucide-react';
+import TasterProfiles from './components/TasterProfiles';
+import Cellar from './components/Cellar';
+import { Wine as WineIcon, Trophy, Layers, ClipboardList, History as HistoryIcon, Settings as SettingsIcon, PlusCircle, AlertCircle, RefreshCw, Users, Star } from 'lucide-react';
 
 export default function App() {
 
@@ -22,7 +24,7 @@ export default function App() {
   const [loading, setLoading] = useState(true);
 
   // Navigation States
-  const [currentTab, setCurrentTab] = useState<'dashboard' | 'brackets' | 'intake' | 'history' | 'settings'>('intake');
+  const [currentTab, setCurrentTab] = useState<'dashboard' | 'brackets' | 'intake' | 'history' | 'settings' | 'palate' | 'cellar'>('intake');
   const [currentMatch, setCurrentMatch] = useState<{ id: string; wine1: string; wine2: string } | null>(null);
   
   // New session input
@@ -352,7 +354,11 @@ export default function App() {
           submitted_by: w.submitted_by,
           blind_label: w.blind_label || undefined,
           score: w.score,
-          wins: w.wins
+          wins: w.wins,
+          varietal: w.varietal,
+          region: w.region,
+          country: w.country,
+          style: w.style
         })),
         votes: votes.map(v => ({
           voter_name: v.voter_name,
@@ -505,6 +511,28 @@ export default function App() {
           </button>
 
           <button
+            onClick={() => { setCurrentMatch(null); setCurrentTab('palate'); }}
+            className={`px-4 py-2 rounded-lg transition-colors flex items-center gap-1.5 ${
+              currentTab === 'palate' && !currentMatch
+                ? 'bg-wine-850 text-wine-200'
+                : 'text-slate-400 hover:text-slate-200'
+            }`}
+          >
+            <Users className="w-4 h-4" /> Palate
+          </button>
+
+          <button
+            onClick={() => { setCurrentMatch(null); setCurrentTab('cellar'); }}
+            className={`px-4 py-2 rounded-lg transition-colors flex items-center gap-1.5 ${
+              currentTab === 'cellar' && !currentMatch
+                ? 'bg-wine-850 text-wine-200'
+                : 'text-slate-400 hover:text-slate-200'
+            }`}
+          >
+            <Star className="w-4 h-4" /> Cellar
+          </button>
+
+          <button
             onClick={() => { setCurrentMatch(null); setCurrentTab('settings'); }}
             className={`px-4 py-2 rounded-lg transition-colors flex items-center gap-1.5 ${
               currentTab === 'settings' && !currentMatch
@@ -525,10 +553,12 @@ export default function App() {
             <RefreshCw className="w-8 h-8 text-wine-500 animate-spin" />
             <p className="text-sm text-slate-500 font-medium">Fetching tasting board...</p>
           </div>
-        ) : (currentTab === 'settings' || currentTab === 'history') ? (
-          /* Settings and History are accessible even without active session */
+        ) : (currentTab === 'settings' || currentTab === 'history' || currentTab === 'palate' || currentTab === 'cellar') ? (
+          /* These views are accessible even without an active session */
           <div className="space-y-6">
             {currentTab === 'history' && <History voterName={voterName} onRefresh={loadData} />}
+            {currentTab === 'palate' && <TasterProfiles voterName={voterName} />}
+            {currentTab === 'cellar' && <Cellar voterName={voterName} />}
             {currentTab === 'settings' && (
               <Settings
                 voterName={voterName}
