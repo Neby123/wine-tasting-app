@@ -11,6 +11,18 @@ import TasterProfiles from './components/TasterProfiles';
 import Cellar from './components/Cellar';
 import { Wine as WineIcon, Trophy, Layers, ClipboardList, History as HistoryIcon, Settings as SettingsIcon, PlusCircle, AlertCircle, RefreshCw, Users, Star } from 'lucide-react';
 
+// The tab you're viewing is kept in the URL hash (e.g. #history) so a page
+// reload — which mobile browsers trigger on their own when they discard a
+// backgrounded tab — puts you back where you were instead of dumping you on the
+// start screen. It also makes each view deep-linkable and back-button friendly.
+const TAB_VALUES = ['dashboard', 'brackets', 'intake', 'history', 'settings', 'palate', 'cellar'] as const;
+type TabValue = typeof TAB_VALUES[number];
+
+const getTabFromHash = (): TabValue => {
+  const raw = window.location.hash.replace(/^#/, '');
+  return (TAB_VALUES as readonly string[]).includes(raw) ? (raw as TabValue) : 'intake';
+};
+
 export default function App() {
 
   // Profile States
@@ -24,7 +36,7 @@ export default function App() {
   const [loading, setLoading] = useState(true);
 
   // Navigation States
-  const [currentTab, setCurrentTab] = useState<'dashboard' | 'brackets' | 'intake' | 'history' | 'settings' | 'palate' | 'cellar'>('intake');
+  const [currentTab, setCurrentTab] = useState<TabValue>(getTabFromHash);
   const [currentMatch, setCurrentMatch] = useState<{ id: string; wine1: string; wine2: string } | null>(null);
   
   // New session input
@@ -103,6 +115,25 @@ export default function App() {
     };
 
     runMigration();
+  }, []);
+
+  // Reflect the active tab into the URL hash. Guarded on difference so this
+  // doesn't fight the hashchange listener below. Assigning location.hash adds a
+  // history entry, so the browser back button steps through tabs.
+  useEffect(() => {
+    if (getTabFromHash() !== currentTab) {
+      window.location.hash = currentTab;
+    }
+  }, [currentTab]);
+
+  // Reflect hash changes (back/forward, or a shared deep link) back into state.
+  useEffect(() => {
+    const onHashChange = () => {
+      const next = getTabFromHash();
+      setCurrentTab(prev => (prev === next ? prev : next));
+    };
+    window.addEventListener('hashchange', onHashChange);
+    return () => window.removeEventListener('hashchange', onHashChange);
   }, []);
 
   // Supabase Realtime subscriptions for live multiplayer synchronization
