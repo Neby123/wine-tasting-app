@@ -48,12 +48,30 @@ export default function Dashboard({
 
   const activeMatch = getActiveMatch();
 
-  // Find unique voters in this session
+  // Find unique individual voters in this session
   const getUniqueVoters = () => {
     const voterNames = new Set<string>();
+    // First add all actual individual voters who have submitted votes
     votes.forEach(v => voterNames.add(v.voter_name));
-    // Also include logged contributors as likely voters
-    wines.forEach(w => voterNames.add(w.submitted_by));
+    
+    // If no votes cast yet, split couple names (e.g. "Jack & Alexcia" -> "Jack", "Alexcia")
+    if (voterNames.size === 0) {
+      wines.forEach(w => {
+        if (w.submitted_by) {
+          const parts = w.submitted_by.split(/&|and|\//i);
+          parts.forEach(p => {
+            const clean = p.trim();
+            if (clean) voterNames.add(clean);
+          });
+        }
+      });
+    }
+
+    // Default to individual participants list if still empty
+    if (voterNames.size === 0) {
+      ['Ben', 'Monica', 'Jack', 'Alexcia', 'David', 'Abby'].forEach(p => voterNames.add(p));
+    }
+
     return Array.from(voterNames).filter(Boolean);
   };
 
