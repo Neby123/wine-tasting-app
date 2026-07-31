@@ -18,8 +18,8 @@ const getSBConfig = () => {
     return { url: urlParam, key: keyParam };
   }
 
-  const lsUrl = localStorage.getItem('WINE_TASTING_SB_URL');
-  const lsKey = localStorage.getItem('WINE_TASTING_SB_KEY');
+  const lsUrl = localStorage.getItem('WINE_TASTING_SB_URL') || (import.meta.env.VITE_SUPABASE_URL as string);
+  const lsKey = localStorage.getItem('WINE_TASTING_SB_KEY') || (import.meta.env.VITE_SUPABASE_ANON_KEY as string);
   
   if (lsUrl && lsKey) {
     return { url: lsUrl, key: lsKey };
