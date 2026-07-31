@@ -248,6 +248,18 @@ export default function Brackets({
         <p className="text-slate-400 text-sm">
           Click on any unlocked matchup to taste and enter your scores.
         </p>
+        {voterName && (
+          <div className="inline-flex items-center gap-2 text-xs bg-slate-900/60 border border-slate-850 px-3 py-1 rounded-full text-slate-400 font-mono mt-1">
+            <span>Voting as: <strong className="text-amber-300 font-sans">{voterName}</strong></span>
+            <button 
+              type="button"
+              onClick={() => onUpdateVoterName && onUpdateVoterName('')}
+              className="text-slate-500 hover:text-amber-400 underline font-sans text-[11px] transition-colors"
+            >
+              (Switch Profile)
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Profile Selector Banner for New Guests */}
