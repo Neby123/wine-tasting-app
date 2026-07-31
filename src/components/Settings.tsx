@@ -73,12 +73,12 @@ export default function Settings({
 
   // Generate share link
   const getShareLink = () => {
-    const url = localStorage.getItem('WINE_TASTING_SB_URL');
-    const key = localStorage.getItem('WINE_TASTING_SB_KEY');
-    if (!url || !key) return '';
+    const url = localStorage.getItem('WINE_TASTING_SB_URL') || (import.meta.env.VITE_SUPABASE_URL as string);
+    const key = localStorage.getItem('WINE_TASTING_SB_KEY') || (import.meta.env.VITE_SUPABASE_ANON_KEY as string);
+    if (!url || !key) return window.location.origin + window.location.pathname;
 
     const baseUrl = window.location.origin + window.location.pathname;
-    return `${baseUrl}?sb_url=${encodeURIComponent(url)}&sb_key=${encodeURIComponent(key)}`;
+    return `${baseUrl}?sb_url=${encodeURIComponent(url.trim())}&sb_key=${encodeURIComponent(key.trim())}`;
   };
 
   const shareLink = getShareLink();
