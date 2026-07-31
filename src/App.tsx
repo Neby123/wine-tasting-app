@@ -241,7 +241,12 @@ export default function App() {
       setCurrentTab('intake');
     } catch (err) {
       console.error("Failed to create session:", err);
-      alert("Failed to initialize session: " + (err as Error).message);
+      const msg = (err as Error).message || String(err);
+      if (msg.includes("Failed to fetch")) {
+        alert("Connection Failed: Unable to reach your Supabase database. Please go to Settings -> Database Configuration and double check your Supabase URL and Anon Key.");
+      } else {
+        alert("Failed to initialize session: " + msg);
+      }
     } finally {
       setCreatingSession(false);
     }

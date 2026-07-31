@@ -18,11 +18,12 @@ const getSBConfig = () => {
     return { url: urlParam, key: keyParam };
   }
 
-  const lsUrl = localStorage.getItem('WINE_TASTING_SB_URL') || (import.meta.env.VITE_SUPABASE_URL as string);
-  const lsKey = localStorage.getItem('WINE_TASTING_SB_KEY') || (import.meta.env.VITE_SUPABASE_ANON_KEY as string);
+  const rawUrl = (urlParam || localStorage.getItem('WINE_TASTING_SB_URL') || (import.meta.env.VITE_SUPABASE_URL as string) || '').trim();
+  const rawKey = (keyParam || localStorage.getItem('WINE_TASTING_SB_KEY') || (import.meta.env.VITE_SUPABASE_ANON_KEY as string) || '').trim();
   
-  if (lsUrl && lsKey) {
-    return { url: lsUrl, key: lsKey };
+  if (rawUrl && rawKey) {
+    const url = rawUrl.replace(/\/+$/, '');
+    return { url, key: rawKey };
   }
   return null;
 };
