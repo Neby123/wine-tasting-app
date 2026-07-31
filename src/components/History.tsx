@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { HistoricalTasting } from '../utils/mockData';
+import { HistoricalTasting, HISTORICAL_SESSIONS } from '../utils/mockData';
 import { db } from '../utils/supabase';
 import { Trophy, Calendar, DollarSign, Award, ChevronDown, ChevronUp, RefreshCw } from 'lucide-react';
 
@@ -18,9 +18,10 @@ export default function History({ voterName, onRefresh }: HistoryProps) {
     setLoading(true);
     try {
       const data = await db.getHistory();
-      setSessions(data);
+      setSessions(data && data.length > 0 ? data : HISTORICAL_SESSIONS);
     } catch (err) {
       console.error("Error loading history:", err);
+      setSessions(HISTORICAL_SESSIONS);
     } finally {
       setLoading(false);
     }

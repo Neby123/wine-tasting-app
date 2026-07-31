@@ -44,7 +44,7 @@ const getOrGenerateVoterToken = () => {
 const getHeaders = () => {
   return {
     'x-voter-token': getOrGenerateVoterToken(),
-    'x-host-passcode': localStorage.getItem('WINE_TASTING_HOST_PASSCODE') || ''
+    'x-host-passcode': localStorage.getItem('WINE_TASTING_HOST_PASSCODE') || '1234'
   };
 };
 
@@ -236,54 +236,62 @@ export const db = {
   },
 
   getHistory: async (): Promise<HistoricalTasting[]> => {
-    const client = ensureClient();
-    const { data, error } = await client
-      .from('history')
-      .select('*')
-      .order('date', { ascending: false });
+    try {
+      const client = ensureClient();
+      const { data, error } = await client
+        .from('history')
+        .select('*')
+        .order('date', { ascending: false });
 
-    if (error) throw error;
-    
-    if (!data || data.length === 0) {
-      console.log("History table is empty. Auto-seeding historical sessions into Supabase...");
-      try {
-        const rowsToInsert = HISTORICAL_SESSIONS.map((session: HistoricalTasting) => ({
-          id: session.id,
-          name: session.name,
-          date: session.date,
-          winner_name: session.winnerName,
-          winner_price: session.winnerPrice,
-          winner_brought_by: session.winnerBroughtBy,
-          wines_count: session.winesCount,
-          group_winner: session.groupWinner,
-          second_place: session.secondPlace,
-          best_value: session.bestValue,
-          giant_killer: session.giantKiller || null,
-          wines: session.wines,
-          votes: session.votes || []
-        }));
-        await client.from('history').upsert(rowsToInsert);
-      } catch (seedErr) {
-        console.warn("Failed to auto-seed history into Supabase:", seedErr);
+      if (error) {
+        console.warn("Supabase history query returned error, using fallback:", error);
+        return HISTORICAL_SESSIONS;
       }
+      
+      if (!data || data.length === 0) {
+        console.log("History table is empty. Auto-seeding historical sessions into Supabase...");
+        try {
+          const rowsToInsert = HISTORICAL_SESSIONS.map((session: HistoricalTasting) => ({
+            id: session.id,
+            name: session.name,
+            date: session.date,
+            winner_name: session.winnerName,
+            winner_price: session.winnerPrice,
+            winner_brought_by: session.winnerBroughtBy,
+            wines_count: session.winesCount,
+            group_winner: session.groupWinner,
+            second_place: session.secondPlace,
+            best_value: session.bestValue,
+            giant_killer: session.giantKiller || null,
+            wines: session.wines,
+            votes: session.votes || []
+          }));
+          await client.from('history').upsert(rowsToInsert);
+        } catch (seedErr) {
+          console.warn("Failed to auto-seed history into Supabase:", seedErr);
+        }
+        return HISTORICAL_SESSIONS;
+      }
+
+      return data.map(row => ({
+        id: row.id,
+        name: row.name,
+        date: row.date,
+        winnerName: row.winner_name,
+        winnerPrice: Number(row.winner_price),
+        winnerBroughtBy: row.winner_brought_by,
+        winesCount: row.wines_count,
+        groupWinner: row.group_winner,
+        secondPlace: row.second_place,
+        bestValue: row.best_value,
+        giantKiller: row.giant_killer || undefined,
+        wines: row.wines,
+        votes: row.votes
+      }));
+    } catch (err) {
+      console.warn("getHistory caught error, returning HISTORICAL_SESSIONS fallback:", err);
       return HISTORICAL_SESSIONS;
     }
-
-    return data.map(row => ({
-      id: row.id,
-      name: row.name,
-      date: row.date,
-      winnerName: row.winner_name,
-      winnerPrice: Number(row.winner_price),
-      winnerBroughtBy: row.winner_brought_by,
-      winesCount: row.wines_count,
-      groupWinner: row.group_winner,
-      secondPlace: row.second_place,
-      bestValue: row.best_value,
-      giantKiller: row.giant_killer || undefined,
-      wines: row.wines,
-      votes: row.votes
-    }));
   },
 
   addHistorySession: async (session: HistoricalTasting): Promise<void> => {

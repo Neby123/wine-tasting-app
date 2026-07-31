@@ -240,7 +240,8 @@ export default function App() {
       setVotes([]);
       setCurrentTab('intake');
     } catch (err) {
-      console.error(err);
+      console.error("Failed to create session:", err);
+      alert("Failed to initialize session: " + (err as Error).message);
     } finally {
       setCreatingSession(false);
     }
