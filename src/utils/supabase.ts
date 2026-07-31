@@ -1,5 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
-import { WineSession, Wine, Vote, HistoricalTasting, WishlistItem, WineEnrichment } from './mockData';
+import { WineSession, Wine, Vote, HistoricalTasting, WishlistItem, WineEnrichment, HISTORICAL_SESSIONS } from './mockData';
 
 const getSBConfig = () => {
   // Check URL params first (useful for guest invite links)
@@ -244,7 +244,32 @@ export const db = {
 
     if (error) throw error;
     
-    return (data || []).map(row => ({
+    if (!data || data.length === 0) {
+      console.log("History table is empty. Auto-seeding historical sessions into Supabase...");
+      try {
+        const rowsToInsert = HISTORICAL_SESSIONS.map((session: HistoricalTasting) => ({
+          id: session.id,
+          name: session.name,
+          date: session.date,
+          winner_name: session.winnerName,
+          winner_price: session.winnerPrice,
+          winner_brought_by: session.winnerBroughtBy,
+          wines_count: session.winesCount,
+          group_winner: session.groupWinner,
+          second_place: session.secondPlace,
+          best_value: session.bestValue,
+          giant_killer: session.giantKiller || null,
+          wines: session.wines,
+          votes: session.votes || []
+        }));
+        await client.from('history').upsert(rowsToInsert);
+      } catch (seedErr) {
+        console.warn("Failed to auto-seed history into Supabase:", seedErr);
+      }
+      return HISTORICAL_SESSIONS;
+    }
+
+    return data.map(row => ({
       id: row.id,
       name: row.name,
       date: row.date,
