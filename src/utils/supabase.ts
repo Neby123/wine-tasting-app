@@ -323,19 +323,27 @@ export const db = {
   // --- Wishlist ("buy again") ---------------------------------------------
 
   getWishlist: async (voterName?: string): Promise<WishlistItem[]> => {
-    const client = ensureClient();
-    let query = client
-      .from('wishlist')
-      .select('*')
-      .order('created_at', { ascending: false });
+    try {
+      const client = ensureClient();
+      let query = client
+        .from('wishlist')
+        .select('*')
+        .order('created_at', { ascending: false });
 
-    if (voterName) {
-      query = query.eq('voter_name', voterName);
+      if (voterName) {
+        query = query.eq('voter_name', voterName);
+      }
+
+      const { data, error } = await query;
+      if (error) {
+        console.warn("getWishlist query error, returning empty array:", error);
+        return [];
+      }
+      return (data || []) as WishlistItem[];
+    } catch (err) {
+      console.warn("getWishlist caught error, returning empty array:", err);
+      return [];
     }
-
-    const { data, error } = await query;
-    if (error) throw error;
-    return (data || []) as WishlistItem[];
   },
 
   addWishlistItem: async (item: Omit<WishlistItem, 'id' | 'created_at'>): Promise<WishlistItem> => {
