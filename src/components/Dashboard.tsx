@@ -396,15 +396,22 @@ export default function Dashboard({
                 ) : (
                   allVoters.map((name) => {
                     const votesCount = votes.filter(v => v.voter_name.toLowerCase() === name.toLowerCase()).length;
+                    const isComplete = votesCount >= 7; // 4 QF + 2 SF + 1 Final = 7 votes
                     return (
                       <div key={name} className="flex justify-between items-center text-xs bg-slate-950/40 px-3 py-2 rounded-lg border border-slate-850/40">
                         <span className="font-semibold text-slate-350">{name}</span>
-                        {votesCount > 0 ? (
-                          <span className="text-emerald-400 bg-emerald-950/30 px-2.5 py-0.5 rounded-full border border-emerald-900/30 font-bold">
-                            {votesCount} {votesCount === 1 ? 'vote' : 'votes'} logged
+                        {isComplete ? (
+                          <span className="text-emerald-400 bg-emerald-950/30 px-2.5 py-0.5 rounded-full border border-emerald-900/30 font-bold flex items-center gap-1">
+                            ✓ Complete (7/7)
+                          </span>
+                        ) : votesCount > 0 ? (
+                          <span className="text-amber-400 bg-amber-950/30 px-2.5 py-0.5 rounded-full border border-amber-900/30 font-bold">
+                            In Progress ({votesCount}/7)
                           </span>
                         ) : (
-                          <span className="text-slate-500 bg-slate-900 px-2.5 py-0.5 rounded-full">Ready</span>
+                          <span className="text-slate-500 bg-slate-900 px-2.5 py-0.5 rounded-full">
+                            Not Started (0/7)
+                          </span>
                         )}
                       </div>
                     );
