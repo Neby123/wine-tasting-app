@@ -266,7 +266,7 @@ export default function Brackets({
       {!voterName && (
         <div className="glass-panel border border-amber-500/40 bg-amber-950/20 rounded-2xl p-6 max-w-lg mx-auto text-center space-y-4 shadow-xl shadow-amber-950/20">
           <div className="space-y-1">
-            <h3 className="text-xl font-bold font-serif text-amber-200">Welcome to Blanc & Bubbles!</h3>
+            <h3 className="text-xl font-bold font-serif text-amber-200">Welcome to Brut Force!</h3>
             <p className="text-xs text-slate-300">Select your name below to unlock your personal tasting bracket:</p>
           </div>
           <div className="max-w-xs mx-auto">
