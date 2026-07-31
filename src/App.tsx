@@ -284,21 +284,6 @@ export default function App() {
     }
   };
 
-  const handleResolveMatch = async (matchId: string, winnerLabel: string) => {
-    if (!activeSession) return;
-    
-    // Update local state copy
-    const updatedWinners = {
-      ...(activeSession.match_winners || {}),
-      [matchId]: winnerLabel
-    };
-
-    // Update in Database
-    const updatedSession = await db.updateSessionMatchWinners(activeSession.id, updatedWinners);
-    setActiveSession(updatedSession);
-    await loadData();
-  };
-
   const handleRevealWines = async (mapping: Record<string, string>) => {
     if (!activeSession) return;
     setLoading(true);
@@ -729,7 +714,6 @@ export default function App() {
                 votes={votes}
                 isHost={isHost}
                 matchWinners={activeSession.match_winners || {}}
-                onResolveMatch={handleResolveMatch}
                 onRevealWines={handleRevealWines}
                 onResetSession={handleResetSession}
               />

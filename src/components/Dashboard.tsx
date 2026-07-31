@@ -8,7 +8,6 @@ interface DashboardProps {
   votes: Vote[];
   isHost: boolean;
   matchWinners: Record<string, string>;
-  onResolveMatch: (matchId: string, winnerLabel: string) => Promise<void>;
   onRevealWines: (mapping: Record<string, string>) => Promise<void>;
   onResetSession: () => Promise<void>;
 }
@@ -19,7 +18,6 @@ export default function Dashboard({
   votes,
   isHost,
   matchWinners,
-  onResolveMatch,
   onRevealWines,
   onResetSession
 }: DashboardProps) {
@@ -34,20 +32,6 @@ export default function Dashboard({
   const isRevealed = wines.some(w => w.revealed);
 
   // Determine current active match that needs resolving
-  // Q1 -> Q2 -> Q3 -> Q4 -> S1 -> S2 -> F
-  const getActiveMatch = () => {
-    if (!matchWinners['Q1']) return { id: 'Q1', wine1: 'A', wine2: 'B' };
-    if (!matchWinners['Q2']) return { id: 'Q2', wine1: 'C', wine2: 'D' };
-    if (!matchWinners['Q3']) return { id: 'Q3', wine1: 'E', wine2: 'F' };
-    if (!matchWinners['Q4']) return { id: 'Q4', wine1: 'G', wine2: 'H' };
-    if (!matchWinners['S1']) return { id: 'S1', wine1: matchWinners['Q1'], wine2: matchWinners['Q2'] };
-    if (!matchWinners['S2']) return { id: 'S2', wine1: matchWinners['Q3'], wine2: matchWinners['Q4'] };
-    if (!matchWinners['F']) return { id: 'F', wine1: matchWinners['S1'], wine2: matchWinners['S2'] };
-    return null;
-  };
-
-  const activeMatch = getActiveMatch();
-
   // Find unique individual voters in this session
   const getUniqueVoters = () => {
     const voterNames = new Set<string>();
@@ -76,34 +60,6 @@ export default function Dashboard({
   };
 
   const allVoters = getUniqueVoters();
-
-  // For the active match, see who has voted
-  const activeMatchVotes = activeMatch 
-    ? votes.filter(v => v.match_id === activeMatch.id) 
-    : [];
-
-  const activeVotersList = activeMatchVotes.map(v => v.voter_name.toLowerCase());
-
-  // Calculate live average for active match
-  const getActiveMatchStats = () => {
-    if (activeMatchVotes.length === 0) return { wine1Pct: 50, wine2Pct: 50, totalVotes: 0 };
-    
-    // Average slider value (0-100)
-    const sum = activeMatchVotes.reduce((acc, v) => acc + v.slider_value, 0);
-    const avg = sum / activeMatchVotes.length;
-
-    // Slider value is preference for wine 2 (0=wine1, 100=wine2)
-    const wine2Pct = Math.round(avg);
-    const wine1Pct = 100 - wine2Pct;
-
-    return {
-      wine1Pct,
-      wine2Pct,
-      totalVotes: activeMatchVotes.length
-    };
-  };
-
-  const activeStats = getActiveMatchStats();
 
   // ----------------------------------------------------
   // ADVANCED ANALYTICS & MATH CALCULATIONS
@@ -244,18 +200,6 @@ export default function Dashboard({
 
   const awards = getAwards();
 
-  // Resolve active match using current voting average
-  const handleAutoResolve = async () => {
-    if (!activeMatch) return;
-    const winner = activeStats.wine1Pct >= activeStats.wine2Pct ? activeMatch.wine1 : activeMatch.wine2;
-    await onResolveMatch(activeMatch.id, winner);
-  };
-
-  const handleResolveWinner = async (label: string) => {
-    if (!activeMatch) return;
-    await onResolveMatch(activeMatch.id, label);
-  };
-
   const handleConfirmReveal = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!canSubmitReveal) return;
@@ -318,88 +262,23 @@ export default function Dashboard({
 
       {/* ---------------------------------------------------- */}
       {/* VIEW 1: LIVE STATUS / TASTING WORKFLOW */}
-      // ----------------------------------------------------
+      {/* ---------------------------------------------------- */}
       {activeTab === 'status' && (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
           
-          {/* Column 1 & 2: Active Match Control (Host & Voter views) */}
+          {/* Column 1 & 2: Host Unbag & Reveal Tool or Completed View */}
           <div className="lg:col-span-2 space-y-6">
-            {activeMatch ? (
-              <div className="glass-panel rounded-2xl p-6 space-y-6">
-                <div className="flex justify-between items-center border-b border-slate-850 pb-3">
-                  <h3 className="text-lg font-semibold text-slate-200 flex items-center gap-2">
-                    <Shield className="w-5 h-5 text-wine-400" />
-                    Active Matchup: {activeMatch.id}
-                  </h3>
-                  <span className="text-xs bg-slate-950 text-slate-400 font-mono px-3 py-1 rounded-full border border-slate-850">
-                    Total Votes Cast: {activeStats.totalVotes}
-                  </span>
-                </div>
-
-                {/* Live average visualization */}
-                <div className="space-y-4">
-                  <div className="flex justify-between text-2xl font-black font-serif px-2">
-                    <span className="text-wine-400">Wine {activeMatch.wine1} ({activeStats.wine1Pct}%)</span>
-                    <span className="text-wine-400">({activeStats.wine2Pct}%) Wine {activeMatch.wine2}</span>
-                  </div>
-
-                  <div className="h-6 bg-slate-950 rounded-full overflow-hidden border border-slate-850 flex shadow-inner">
-                    <div 
-                      className="bg-gradient-to-r from-wine-900 to-wine-600 transition-all duration-500" 
-                      style={{ width: `${activeStats.wine1Pct}%` }}
-                    />
-                    <div 
-                      className="bg-gradient-to-r from-slate-800 to-slate-900 transition-all duration-500" 
-                      style={{ width: `${activeStats.wine2Pct}%` }}
-                    />
-                  </div>
-
-                  <p className="text-center text-xs text-slate-500 italic">
-                    The bar shifts left for Wine {activeMatch.wine1} and right for Wine {activeMatch.wine2} based on live votes.
-                  </p>
-                </div>
-
-                {/* Host resolve actions */}
-                {isHost && (
-                  <div className="bg-slate-950/60 border border-slate-850 rounded-xl p-5 space-y-4">
-                    <p className="text-sm font-semibold text-slate-350 flex items-center gap-1.5">
-                      Host Resolution Panel
-                    </p>
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                      <button
-                        onClick={() => handleResolveWinner(activeMatch.wine1)}
-                        className="py-2.5 px-4 bg-slate-900 border border-slate-800 hover:border-wine-800 hover:text-wine-200 text-slate-300 text-xs font-semibold rounded-lg transition-all"
-                      >
-                        Force Win Wine {activeMatch.wine1}
-                      </button>
-                      <button
-                        onClick={handleAutoResolve}
-                        disabled={activeStats.totalVotes === 0}
-                        className="py-2.5 px-4 bg-wine-800 hover:bg-wine-700 disabled:bg-slate-900 disabled:text-slate-600 disabled:border-slate-950 text-white text-xs font-semibold rounded-lg shadow-md transition-all flex items-center justify-center gap-1.5"
-                      >
-                        Resolve by Votes ({activeStats.wine1Pct >= activeStats.wine2Pct ? activeMatch.wine1 : activeMatch.wine2} wins)
-                      </button>
-                      <button
-                        onClick={() => handleResolveWinner(activeMatch.wine2)}
-                        className="py-2.5 px-4 bg-slate-900 border border-slate-800 hover:border-wine-800 hover:text-wine-200 text-slate-300 text-xs font-semibold rounded-lg transition-all"
-                      >
-                        Force Win Wine {activeMatch.wine2}
-                      </button>
-                    </div>
-                  </div>
-                )}
-              </div>
-            ) : !isRevealed ? (
+            {!isRevealed ? (
               isHost ? (
                 <div className="glass-panel rounded-2xl p-6 space-y-6">
                   <div className="border-b border-slate-850 pb-3 flex items-center justify-between">
                     <div>
                       <h3 className="text-xl font-bold font-serif text-slate-100 flex items-center gap-2">
                         <Eye className="w-5.5 h-5.5 text-wine-400" />
-                        Reveal & Map Bottles
+                        Unbag & Reveal Bottles
                       </h3>
                       <p className="text-xs text-slate-500 mt-1">
-                        Unbag each bottle A-H and select its true identity from the registered wines.
+                        When tasting is complete, unbag each physical bottle A-H and map its blind letter to its true wine identity below.
                       </p>
                     </div>
                   </div>
@@ -442,7 +321,7 @@ export default function Dashboard({
                       <button
                         type="submit"
                         disabled={!canSubmitReveal}
-                        className="py-2.5 px-8 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 disabled:from-slate-800 disabled:to-slate-900 disabled:text-slate-500 text-slate-950 font-bold rounded-lg text-sm transition-all flex items-center justify-center gap-2 shadow-lg shadow-amber-950/20"
+                        className="py-3 px-8 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 disabled:from-slate-800 disabled:to-slate-900 disabled:text-slate-500 text-slate-950 font-bold rounded-xl text-sm transition-all flex items-center justify-center gap-2 shadow-lg shadow-amber-950/20"
                       >
                         <Eye className="w-4 h-4" /> Save Reveal & Map Results
                       </button>
@@ -453,9 +332,9 @@ export default function Dashboard({
                 <div className="glass-panel rounded-2xl p-8 text-center space-y-4">
                   <Trophy className="w-16 h-16 text-gold-400 mx-auto drop-shadow-[0_0_15px_rgba(212,175,55,0.3)] animate-pulse" />
                   <div className="space-y-1">
-                    <h3 className="text-2xl font-bold font-serif text-slate-200">Bracket Completed!</h3>
+                    <h3 className="text-2xl font-bold font-serif text-slate-200">Tasting In Progress!</h3>
                     <p className="text-sm text-slate-400 max-w-sm mx-auto">
-                      All matches have been evaluated. Waiting for the Host to unbag and reveal the wines... Standby for the final stats and value breakdown!
+                      Fill in your preference sliders on the Bracket tab. When everyone finishes, the Host will unbag and reveal the wines!
                     </p>
                   </div>
                 </div>
@@ -466,7 +345,7 @@ export default function Dashboard({
                 <div className="space-y-1">
                   <h3 className="text-2xl font-bold font-serif text-slate-200">Tasting Completed & Revealed</h3>
                   <p className="text-sm text-slate-400 max-w-sm mx-auto">
-                    The results have been computed. Check the "Value Analysis & Awards" tab to see winners, awards, and price comparisons!
+                    All bottles have been unbagged and mapped. Check the <strong>Value Analysis & Awards</strong> tab above for trophies and price breakdowns!
                   </p>
                 </div>
               </div>
@@ -516,18 +395,16 @@ export default function Dashboard({
                   <p className="text-xs text-slate-500 italic py-2">No active tasters registered yet.</p>
                 ) : (
                   allVoters.map((name) => {
-                    const hasVotedActive = activeMatch ? activeVotersList.includes(name.toLowerCase()) : false;
+                    const votesCount = votes.filter(v => v.voter_name.toLowerCase() === name.toLowerCase()).length;
                     return (
                       <div key={name} className="flex justify-between items-center text-xs bg-slate-950/40 px-3 py-2 rounded-lg border border-slate-850/40">
                         <span className="font-semibold text-slate-350">{name}</span>
-                        {activeMatch ? (
-                          hasVotedActive ? (
-                            <span className="text-emerald-400 bg-emerald-950/30 px-2 py-0.5 rounded-full border border-emerald-900/30 font-bold">Voted</span>
-                          ) : (
-                            <span className="text-slate-500 bg-slate-900 px-2 py-0.5 rounded-full">Tasting...</span>
-                          )
+                        {votesCount > 0 ? (
+                          <span className="text-emerald-400 bg-emerald-950/30 px-2.5 py-0.5 rounded-full border border-emerald-900/30 font-bold">
+                            {votesCount} {votesCount === 1 ? 'vote' : 'votes'} logged
+                          </span>
                         ) : (
-                          <span className="text-slate-500">Ready</span>
+                          <span className="text-slate-500 bg-slate-900 px-2.5 py-0.5 rounded-full">Ready</span>
                         )}
                       </div>
                     );
