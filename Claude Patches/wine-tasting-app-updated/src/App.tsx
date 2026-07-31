@@ -40,7 +40,7 @@ export default function App() {
   const [currentMatch, setCurrentMatch] = useState<{ id: string; wine1: string; wine2: string } | null>(null);
   
   // New session input
-  const [newSessionName, setNewSessionName] = useState('Blanc & Bubbles');
+  const [newSessionName, setNewSessionName] = useState('Day de Rosé');
   const [creatingSession, setCreatingSession] = useState(false);
 
   // Load active session and data
