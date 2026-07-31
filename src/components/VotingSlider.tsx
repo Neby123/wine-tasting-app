@@ -51,7 +51,8 @@ export default function VotingSlider({
         onBackToBracket();
       }, 1200); // Wait briefly to show success state before returning
     } catch (err) {
-      console.error(err);
+      console.error("Failed to submit vote:", err);
+      alert("Failed to submit vote. Please try again: " + (err as Error).message);
     } finally {
       setIsSubmitting(false);
     }
