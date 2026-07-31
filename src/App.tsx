@@ -475,22 +475,39 @@ export default function App() {
     <div className="flex-1 flex flex-col min-h-screen pb-12">
       {/* Top Banner Navigation */}
       <header className="glass-panel sticky top-0 z-50 border-b border-slate-800/80 px-6 py-4 flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-wine-800 to-wine-600 flex items-center justify-center shadow-lg shadow-wine-950/40">
+        <button
+          onClick={() => { setCurrentMatch(null); setCurrentTab('intake'); }}
+          className="flex items-center gap-3 text-left focus:outline-none group cursor-pointer"
+          title="Return to Home / Active Session"
+        >
+          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-wine-800 to-wine-600 flex items-center justify-center shadow-lg shadow-wine-950/40 group-hover:scale-105 transition-transform">
             <WineIcon className="w-5.5 h-5.5 text-white" />
           </div>
           <div>
-            <h1 className="text-lg font-extrabold font-serif tracking-tight text-wine-100 flex items-center gap-1.5">
+            <h1 className="text-lg font-extrabold font-serif tracking-tight text-wine-100 flex items-center gap-1.5 group-hover:text-wine-200 transition-colors">
               Grand Taste Tourney
             </h1>
             <p className="text-[10px] text-slate-500 uppercase tracking-widest font-mono font-bold">
               {supabase ? "Multiplayer Connected" : "Connection Pending (Check Settings)"}
             </p>
           </div>
-        </div>
+        </button>
 
         {/* Global User status info */}
         <nav className="flex flex-wrap items-center bg-slate-950/60 p-1 border border-slate-850 rounded-xl text-xs font-semibold gap-1">
+          {!activeSession && (
+            <button
+              onClick={() => { setCurrentMatch(null); setCurrentTab('intake'); }}
+              className={`px-4 py-2 rounded-lg transition-colors flex items-center gap-1.5 ${
+                currentTab === 'intake' && !currentMatch
+                  ? 'bg-wine-850 text-wine-200' 
+                  : 'text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              <PlusCircle className="w-4 h-4 text-wine-400" /> New Session
+            </button>
+          )}
+
           {activeSession && (
             <>
               <button
