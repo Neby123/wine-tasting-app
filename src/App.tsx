@@ -704,6 +704,7 @@ export default function App() {
                 revealed={wines.some(w => w.revealed)}
                 matchWinners={activeSession.match_winners || {}}
                 onSelectMatch={handleSelectMatch}
+                onUpdateVoterName={handleUpdateVoterName}
               />
             )}
 

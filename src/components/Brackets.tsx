@@ -6,8 +6,9 @@ interface BracketsProps {
   votes: Vote[];
   voterName: string;
   revealed: boolean;
-  matchWinners: Record<string, string>; // match_id -> winner_label ('A'-'H')
+  matchWinners: Record<string, string>;
   onSelectMatch: (matchId: string, wine1: string, wine2: string) => void;
+  onUpdateVoterName?: (name: string) => void;
 }
 
 export default function Brackets({
@@ -16,7 +17,8 @@ export default function Brackets({
   voterName,
   revealed,
   matchWinners,
-  onSelectMatch
+  onSelectMatch,
+  onUpdateVoterName
 }: BracketsProps) {
   
   // Find wine detail by blind label
@@ -244,9 +246,35 @@ export default function Brackets({
       <div className="text-center max-w-xl mx-auto space-y-2">
         <h2 className="text-3xl font-bold font-serif text-wine-100">Tasting Tournament Bracket</h2>
         <p className="text-slate-400 text-sm">
-          Click on any unlocked matchup to taste and enter your scores. The bracket will advance in real-time as the host settles each round.
+          Click on any unlocked matchup to taste and enter your scores.
         </p>
       </div>
+
+      {/* Profile Selector Banner for New Guests */}
+      {!voterName && (
+        <div className="glass-panel border border-amber-500/40 bg-amber-950/20 rounded-2xl p-6 max-w-lg mx-auto text-center space-y-4 shadow-xl shadow-amber-950/20">
+          <div className="space-y-1">
+            <h3 className="text-xl font-bold font-serif text-amber-200">Welcome to Blanc & Bubbles!</h3>
+            <p className="text-xs text-slate-300">Select your name below to unlock your personal tasting bracket:</p>
+          </div>
+          <div className="max-w-xs mx-auto">
+            <select 
+              value={voterName}
+              onChange={(e) => {
+                if (e.target.value && onUpdateVoterName) {
+                  onUpdateVoterName(e.target.value);
+                }
+              }}
+              className="w-full bg-slate-900 border border-amber-500/50 rounded-xl px-4 py-2.5 text-sm text-slate-100 font-bold focus:outline-none focus:border-amber-400 cursor-pointer"
+            >
+              <option value="">-- Choose Your Name --</option>
+              {['Ben', 'Monica', 'Jack', 'Alexcia', 'David', 'Abby'].map(name => (
+                <option key={name} value={name}>{name}</option>
+              ))}
+            </select>
+          </div>
+        </div>
+      )}
 
       {/* Bracket Tree Layout */}
       <div className="flex flex-col lg:flex-row items-center justify-center gap-8 xl:gap-12 min-h-[450px] overflow-x-auto py-6">
