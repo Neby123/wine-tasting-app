@@ -56,11 +56,6 @@ export default function App() {
         ]);
         setWines(winesData);
         setVotes(votesData);
-
-        // Auto redirect tab if tasting starts and we are on intake
-        if (session.status === 'tasting' && currentTab === 'intake') {
-          setCurrentTab('brackets');
-        }
       } else {
         setWines([]);
         setVotes([]);
