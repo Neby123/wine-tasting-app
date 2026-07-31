@@ -73,13 +73,30 @@ export default function Brackets({
   // S2: Winner of Q3 vs Winner of Q4
   // F: Winner of S1 vs Winner of S2
 
+  // Get personal winner for a match based on taster's own vote, falling back to host matchWinners
+  const getPersonalWinner = (matchId: string): string | undefined => {
+    const vote = votes.find(v => v.match_id === matchId && v.voter_name.toLowerCase() === voterName.toLowerCase());
+    if (vote && vote.slider_value !== 50) {
+      return vote.slider_value < 50 ? vote.wine_1_label : vote.wine_2_label;
+    }
+    return matchWinners[matchId];
+  };
+
+  const s1Wine1 = getPersonalWinner('Q1') || '';
+  const s1Wine2 = getPersonalWinner('Q2') || '';
+  const s2Wine1 = getPersonalWinner('Q3') || '';
+  const s2Wine2 = getPersonalWinner('Q4') || '';
+
+  const fWine1 = getPersonalWinner('S1') || '';
+  const fWine2 = getPersonalWinner('S2') || '';
+
   const matches = [
     {
       id: 'Q1',
       round: 'Quarterfinal',
       wine1: 'A',
       wine2: 'B',
-      winner: matchWinners['Q1'],
+      winner: getPersonalWinner('Q1'),
       playable: true
     },
     {
@@ -87,7 +104,7 @@ export default function Brackets({
       round: 'Quarterfinal',
       wine1: 'C',
       wine2: 'D',
-      winner: matchWinners['Q2'],
+      winner: getPersonalWinner('Q2'),
       playable: true
     },
     {
@@ -95,7 +112,7 @@ export default function Brackets({
       round: 'Quarterfinal',
       wine1: 'E',
       wine2: 'F',
-      winner: matchWinners['Q3'],
+      winner: getPersonalWinner('Q3'),
       playable: true
     },
     {
@@ -103,32 +120,32 @@ export default function Brackets({
       round: 'Quarterfinal',
       wine1: 'G',
       wine2: 'H',
-      winner: matchWinners['Q4'],
+      winner: getPersonalWinner('Q4'),
       playable: true
     },
     {
       id: 'S1',
       round: 'Semifinal',
-      wine1: matchWinners['Q1'] || '',
-      wine2: matchWinners['Q2'] || '',
-      winner: matchWinners['S1'],
-      playable: !!(matchWinners['Q1'] && matchWinners['Q2'])
+      wine1: s1Wine1,
+      wine2: s1Wine2,
+      winner: getPersonalWinner('S1'),
+      playable: !!(s1Wine1 && s1Wine2)
     },
     {
       id: 'S2',
       round: 'Semifinal',
-      wine1: matchWinners['Q3'] || '',
-      wine2: matchWinners['Q4'] || '',
-      winner: matchWinners['S2'],
-      playable: !!(matchWinners['Q3'] && matchWinners['Q4'])
+      wine1: s2Wine1,
+      wine2: s2Wine2,
+      winner: getPersonalWinner('S2'),
+      playable: !!(s2Wine1 && s2Wine2)
     },
     {
       id: 'F',
       round: 'Final',
-      wine1: matchWinners['S1'] || '',
-      wine2: matchWinners['S2'] || '',
-      winner: matchWinners['F'],
-      playable: !!(matchWinners['S1'] && matchWinners['S2'])
+      wine1: fWine1,
+      wine2: fWine2,
+      winner: getPersonalWinner('F'),
+      playable: !!(fWine1 && fWine2)
     }
   ];
 
