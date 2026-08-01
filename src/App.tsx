@@ -152,7 +152,8 @@ export default function App() {
         async (payload) => {
           console.log('Realtime session update payload:', payload);
           const newSession = payload.new as WineSession;
-          if (!newSession || newSession.status === 'completed') {
+          // Guard against DELETE events which return empty {} for payload.new
+          if (!newSession || !newSession.id || newSession.status === 'completed') {
             setActiveSession(null);
             setWines([]);
             setVotes([]);
@@ -213,8 +214,9 @@ export default function App() {
 
   // Profile Save Actions
   const handleUpdateVoterName = (name: string) => {
-    setVoterName(name);
-    localStorage.setItem('WINE_TASTING_VOTER_NAME', name);
+    const trimmed = (name || '').trim();
+    setVoterName(trimmed);
+    localStorage.setItem('WINE_TASTING_VOTER_NAME', trimmed);
   };
 
   const handleUpdateHostMode = (host: boolean) => {
@@ -249,16 +251,26 @@ export default function App() {
 
   const handleAddWine = async (wineData: Omit<Wine, 'id' | 'session_id' | 'revealed'>) => {
     if (!activeSession) return;
-    const newWine = await db.addWine({
-      ...wineData,
-      session_id: activeSession.id
-    });
-    setWines(prev => [...prev, newWine]);
+    try {
+      const newWine = await db.addWine({
+        ...wineData,
+        session_id: activeSession.id
+      });
+      setWines(prev => [...prev, newWine]);
+    } catch (err) {
+      console.error('Failed to add wine:', err);
+      alert('Failed to add wine. Please check your connection and try again.');
+    }
   };
 
   const handleDeleteWine = async (wineId: string) => {
-    await db.deleteWine(wineId);
-    setWines(prev => prev.filter(w => w.id !== wineId));
+    try {
+      await db.deleteWine(wineId);
+      setWines(prev => prev.filter(w => w.id !== wineId));
+    } catch (err) {
+      console.error('Failed to delete wine:', err);
+      alert('Failed to delete wine. Please check your connection and try again.');
+    }
   };
 
   const handleStartTasting = async () => {
@@ -433,18 +445,23 @@ export default function App() {
   const handleSubmitVote = async (sliderValue: number, notes1: string, notes2: string) => {
     if (!activeSession || !currentMatch) return;
 
-    await db.submitVote({
-      session_id: activeSession.id,
-      voter_name: voterName,
-      match_id: currentMatch.id,
-      wine_1_label: currentMatch.wine1,
-      wine_2_label: currentMatch.wine2,
-      slider_value: sliderValue,
-      notes_wine_1: notes1 || undefined,
-      notes_wine_2: notes2 || undefined
-    });
+    try {
+      await db.submitVote({
+        session_id: activeSession.id,
+        voter_name: voterName,
+        match_id: currentMatch.id,
+        wine_1_label: currentMatch.wine1,
+        wine_2_label: currentMatch.wine2,
+        slider_value: sliderValue,
+        notes_wine_1: notes1 || undefined,
+        notes_wine_2: notes2 || undefined
+      });
 
-    await loadData();
+      await loadData();
+    } catch (err) {
+      console.error('Failed to submit vote:', err);
+      throw err; // Re-throw so VotingSlider's catch block can show its own alert
+    }
   };
 
   // Check existing vote

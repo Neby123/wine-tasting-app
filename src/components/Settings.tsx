@@ -83,11 +83,28 @@ export default function Settings({
 
   const shareLink = getShareLink();
 
-  const handleCopyLink = () => {
+  const handleCopyLink = async () => {
     if (!shareLink) return;
-    navigator.clipboard.writeText(shareLink);
-    setLinkCopied(true);
-    setTimeout(() => setLinkCopied(false), 2000);
+    try {
+      if (navigator.clipboard && window.isSecureContext) {
+        await navigator.clipboard.writeText(shareLink);
+      } else {
+        // Fallback for non-HTTPS contexts (e.g. local network)
+        const textarea = document.createElement('textarea');
+        textarea.value = shareLink;
+        textarea.style.position = 'fixed';
+        textarea.style.opacity = '0';
+        document.body.appendChild(textarea);
+        textarea.select();
+        document.execCommand('copy');
+        document.body.removeChild(textarea);
+      }
+      setLinkCopied(true);
+      setTimeout(() => setLinkCopied(false), 2000);
+    } catch (err) {
+      console.error('Copy failed:', err);
+      alert('Could not copy link automatically. Please select and copy this URL manually:\n\n' + shareLink);
+    }
   };
 
   return (

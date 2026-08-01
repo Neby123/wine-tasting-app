@@ -31,25 +31,25 @@ export default function Dashboard({
   const canSubmitReveal = selectedWineIds.length === 8 && !hasDuplicates;
   const isRevealed = wines.some(w => w.revealed);
 
-  // Determine current active match that needs resolving
   // Find unique individual voters in this session
   const getUniqueVoters = () => {
     const voterNames = new Set<string>();
-    // First add all actual individual voters who have submitted votes
-    votes.forEach(v => voterNames.add(v.voter_name));
-    
-    // If no votes cast yet, split couple names (e.g. "Jack & Alexcia" -> "Jack", "Alexcia")
-    if (voterNames.size === 0) {
-      wines.forEach(w => {
-        if (w.submitted_by) {
-          const parts = w.submitted_by.split(/&|and|\//i);
-          parts.forEach(p => {
-            const clean = p.trim();
-            if (clean) voterNames.add(clean);
-          });
-        }
-      });
-    }
+
+    // Always split couple names from wine submitted_by fields
+    wines.forEach(w => {
+      if (w.submitted_by) {
+        const parts = w.submitted_by.split(/\s*&\s*|\s*\/\s*|\s+\band\b\s+/i);
+        parts.forEach(p => {
+          const clean = p.trim();
+          if (clean) voterNames.add(clean);
+        });
+      }
+    });
+
+    // Also add all actual individual voters who have submitted votes
+    votes.forEach(v => {
+      if (v.voter_name) voterNames.add(v.voter_name);
+    });
 
     // Default to individual participants list if still empty
     if (voterNames.size === 0) {

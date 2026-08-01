@@ -181,7 +181,11 @@ export const db = {
         .eq('id', wineId)
     );
 
-    await Promise.all(updates);
+    const results = await Promise.all(updates);
+    // Check each update result for errors
+    for (const result of results) {
+      if (result.error) throw result.error;
+    }
 
     // Fetch all updated wines for this session
     const { data, error } = await client
