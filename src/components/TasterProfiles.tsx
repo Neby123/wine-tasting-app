@@ -407,8 +407,8 @@ export default function TasterProfiles({ voterName }: TasterProfilesProps) {
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                       {ally && (
                         <div className="rounded-xl border border-emerald-900/40 bg-emerald-950/20 p-3">
-                          <p className="text-[10px] uppercase tracking-widest text-emerald-400 font-bold flex items-center gap-1.5">
-                            <Handshake className="w-3.5 h-3.5" /> Palate twin
+                          <p className="text-[10px] uppercase tracking-widest text-emerald-400 font-bold flex items-center gap-1.5 flex-wrap">
+                            <Handshake className="w-3.5 h-3.5 shrink-0" /> Palate twin <span className="text-emerald-500 font-normal lowercase tracking-normal">(AKA Taste Bud)</span>
                           </p>
                           <p className="text-sm font-semibold text-slate-200 mt-1">{ally.other}</p>
                           <p className="text-[11px] text-slate-500">{pct(ally.share)} agreement over {ally.shared} shared calls</p>
@@ -416,8 +416,8 @@ export default function TasterProfiles({ voterName }: TasterProfilesProps) {
                       )}
                       {rival && rival.other !== ally?.other && (
                         <div className="rounded-xl border border-rose-900/40 bg-rose-950/20 p-3">
-                          <p className="text-[10px] uppercase tracking-widest text-rose-400 font-bold flex items-center gap-1.5">
-                            <Swords className="w-3.5 h-3.5" /> Opposite palate
+                          <p className="text-[10px] uppercase tracking-widest text-rose-400 font-bold flex items-center gap-1.5 flex-wrap">
+                            <Swords className="w-3.5 h-3.5 shrink-0" /> Opposite palate <span className="text-rose-500 font-normal lowercase tracking-normal">(AKA Flavor Foil)</span>
                           </p>
                           <p className="text-sm font-semibold text-slate-200 mt-1">{rival.other}</p>
                           <p className="text-[11px] text-slate-500">{pct(rival.share)} agreement over {rival.shared} shared calls</p>
