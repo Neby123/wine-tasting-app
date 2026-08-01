@@ -316,9 +316,15 @@ export default function App() {
         const label = w.blind_label || '';
         const score = getWineAppreciationIndex(label);
         let wins = 0;
-        Object.values(updatedSession?.match_winners || {}).forEach(winner => {
-          if (winner === label) wins++;
+        votes.forEach(v => {
+          if (v.wine_1_label === label && v.slider_value < 50) wins++;
+          if (v.wine_2_label === label && v.slider_value > 50) wins++;
         });
+        if (wins === 0) {
+          Object.values(updatedSession?.match_winners || {}).forEach(winner => {
+            if (winner === label) wins++;
+          });
+        }
         return {
           ...w,
           score,

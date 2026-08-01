@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Wine, Vote, WineSession } from '../utils/mockData';
 import { Trophy, DollarSign, Award, Eye, Shield, Users, RefreshCw, BarChart2 } from 'lucide-react';
 
@@ -30,6 +30,12 @@ export default function Dashboard({
   const hasDuplicates = selectedWineIds.length !== new Set(selectedWineIds).size;
   const canSubmitReveal = selectedWineIds.length === 8 && !hasDuplicates;
   const isRevealed = wines.some(w => w.revealed);
+
+  useEffect(() => {
+    if (isRevealed) {
+      setActiveTab('analysis');
+    }
+  }, [isRevealed]);
 
   // Find unique individual voters in this session
   const getUniqueVoters = () => {
@@ -91,11 +97,17 @@ export default function Dashboard({
         const label = w.blind_label || '';
         const score = getWineAppreciationIndex(label);
         
-        // Count bracket wins
+        // Count head-to-head battle victories across all votes cast by tasters
         let wins = 0;
-        Object.values(matchWinners).forEach(winner => {
-          if (winner === label) wins++;
+        votes.forEach(v => {
+          if (v.wine_1_label === label && v.slider_value < 50) wins++;
+          if (v.wine_2_label === label && v.slider_value > 50) wins++;
         });
+        if (wins === 0) {
+          Object.values(matchWinners).forEach(winner => {
+            if (winner === label) wins++;
+          });
+        }
 
         return {
           ...w,
@@ -107,11 +119,17 @@ export default function Dashboard({
     : ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'].map(label => {
         const score = getWineAppreciationIndex(label);
         
-        // Count bracket wins
+        // Count head-to-head battle victories across all votes cast by tasters
         let wins = 0;
-        Object.values(matchWinners).forEach(winner => {
-          if (winner === label) wins++;
+        votes.forEach(v => {
+          if (v.wine_1_label === label && v.slider_value < 50) wins++;
+          if (v.wine_2_label === label && v.slider_value > 50) wins++;
         });
+        if (wins === 0) {
+          Object.values(matchWinners).forEach(winner => {
+            if (winner === label) wins++;
+          });
+        }
 
         return {
           id: `label-${label}`,
@@ -264,6 +282,27 @@ export default function Dashboard({
           )}
         </div>
       </div>
+
+      {/* Grand Champion Banner */}
+      {isRevealed && awards && awards.bestInShow && (
+        <div className="glass-panel border-2 border-gold-500/50 bg-gradient-to-r from-amber-950/40 via-gold-950/30 to-wine-950/40 rounded-2xl p-6 text-center space-y-3 shadow-2xl shadow-gold-950/30 animate-scale-in">
+          <div className="inline-flex items-center gap-2 bg-gold-500/20 border border-gold-400/40 px-3.5 py-1 rounded-full text-gold-300 text-xs font-extrabold uppercase tracking-widest">
+            <Trophy className="w-4 h-4 text-gold-400 animate-bounce" /> Brut Force Champion (Best in Show)
+          </div>
+          <h3 className="text-3xl sm:text-4xl font-bold font-serif text-slate-100">
+            {awards.bestInShow.name}
+          </h3>
+          <div className="flex flex-wrap justify-center items-center gap-4 text-sm text-slate-300">
+            <span>Brought by: <strong className="text-amber-300 font-bold">{awards.bestInShow.submitted_by}</strong></span>
+            <span>•</span>
+            <span>Price: <strong className="text-emerald-400 font-bold">${awards.bestInShow.price}</strong></span>
+            <span>•</span>
+            <span>Appreciation Score: <strong className="text-wine-300 font-bold">{awards.bestInShow.score}/100</strong></span>
+            <span>•</span>
+            <span>Head-to-Head Victories: <strong className="text-gold-400 font-bold">{awards.bestInShow.wins} Wins</strong></span>
+          </div>
+        </div>
+      )}
 
       {/* Tabs */}
       <div className="flex border-b border-slate-850">
