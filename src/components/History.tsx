@@ -94,12 +94,63 @@ export default function History({ voterName, onRefresh }: HistoryProps) {
           {sessions.map((session) => {
           const isExpanded = expandedSessionId === session.id;
           
+          // Calculate wins for each wine from votes if wine.wins === 0
+          const winesWithStats = (session.wines || []).map(w => {
+            let wins = w.wins || 0;
+            if (wins === 0 && session.votes && session.votes.length > 0) {
+              session.votes.forEach(v => {
+                if (v.wine_1_label === w.blind_label && v.slider_value < 50) wins++;
+                if (v.wine_2_label === w.blind_label && v.slider_value > 50) wins++;
+              });
+            }
+            return { ...w, wins };
+          });
+
           // Sort participating wines for this session
-          const sortedWines = [...session.wines].sort((a, b) => {
+          const sortedWines = [...winesWithStats].sort((a, b) => {
             if (b.wins !== a.wins) return b.wins - a.wins;
             return b.score - a.score;
           });
-          const hasContributors = session.wines.some(w => w.submitted_by && w.submitted_by !== 'Guest');
+          const hasContributors = (session.wines || []).some(w => w.submitted_by && w.submitted_by !== 'Guest');
+          const topWine = sortedWines[0];
+
+          // Dynamic resolution of winner details if saved as Unknown or N/A
+          const displayWinner = (session.winnerName && session.winnerName !== 'Unknown') 
+            ? session.winnerName 
+            : (topWine ? topWine.name : 'Unknown');
+          const displayBroughtBy = (session.winnerBroughtBy && session.winnerBroughtBy !== 'Unknown') 
+            ? session.winnerBroughtBy 
+            : (topWine ? topWine.submitted_by : '');
+          const displayGroupWinner = (session.groupWinner && session.groupWinner !== 'N/A' && !session.groupWinner.includes('Unknown'))
+            ? session.groupWinner
+            : (topWine ? `${topWine.name} ($${topWine.price.toFixed(2)})` : 'N/A');
+
+          // Compute Giant Killer match if missing or fallback
+          let displayGiantKiller = session.giantKiller;
+          if (!displayGiantKiller || displayGiantKiller === 'No giant killer matches logged') {
+            if (session.votes && session.votes.length > 0) {
+              let maxMargin = 0;
+              session.votes.forEach(v => {
+                const w1 = session.wines.find(w => w.blind_label === v.wine_1_label);
+                const w2 = session.wines.find(w => w.blind_label === v.wine_2_label);
+                if (w1 && w2) {
+                  if (v.slider_value < 50 && w1.price < w2.price) {
+                    const margin = w2.price - w1.price;
+                    if (margin > maxMargin) {
+                      maxMargin = margin;
+                      displayGiantKiller = `${w1.name} ($${w1.price.toFixed(2)}) beat ${w2.name} ($${w2.price.toFixed(2)})`;
+                    }
+                  } else if (v.slider_value > 50 && w2.price < w1.price) {
+                    const margin = w1.price - w2.price;
+                    if (margin > maxMargin) {
+                      maxMargin = margin;
+                      displayGiantKiller = `${w2.name} ($${w2.price.toFixed(2)}) beat ${w1.name} ($${w1.price.toFixed(2)})`;
+                    }
+                  }
+                }
+              });
+            }
+          }
 
           return (
             <div 
@@ -125,31 +176,19 @@ export default function History({ voterName, onRefresh }: HistoryProps) {
 
                 <div className="flex items-center gap-6">
                   {/* Quick Winner Badge */}
-                  {(() => {
-                    const topWine = sortedWines[0];
-                    const displayWinner = (session.winnerName && session.winnerName !== 'Unknown') 
-                      ? session.winnerName 
-                      : (topWine ? topWine.name : 'Unknown');
-                    const displayBroughtBy = (session.winnerBroughtBy && session.winnerBroughtBy !== 'Unknown') 
-                      ? session.winnerBroughtBy 
-                      : (topWine ? topWine.submitted_by : '');
-
-                    return (
-                      <div className="text-right">
-                        <p className="text-[10px] text-gold-400 font-extrabold uppercase tracking-widest flex items-center justify-end gap-1">
-                          <Trophy className="w-3 h-3" /> Winner
-                        </p>
-                        <p className="text-sm font-semibold text-slate-250 leading-tight">
-                          {displayWinner}
-                        </p>
-                        {displayBroughtBy && displayBroughtBy !== 'Guest' && (
-                          <p className="text-xs text-slate-500">
-                            Brought by: {displayBroughtBy}
-                          </p>
-                        )}
-                      </div>
-                    );
-                  })()}
+                  <div className="text-right">
+                    <p className="text-[10px] text-gold-400 font-extrabold uppercase tracking-widest flex items-center justify-end gap-1">
+                      <Trophy className="w-3 h-3" /> Winner
+                    </p>
+                    <p className="text-sm font-semibold text-slate-250 leading-tight">
+                      {displayWinner}
+                    </p>
+                    {displayBroughtBy && displayBroughtBy !== 'Guest' && (
+                      <p className="text-xs text-slate-500">
+                        Brought by: {displayBroughtBy}
+                      </p>
+                    )}
+                  </div>
 
                   {/* Expand icon */}
                   <div className="text-slate-500 bg-slate-950 p-2 rounded-full border border-slate-850">
@@ -168,7 +207,7 @@ export default function History({ voterName, onRefresh }: HistoryProps) {
                       <p className="text-[9px] text-gold-400 font-extrabold uppercase tracking-widest flex items-center gap-1">
                         <Trophy className="w-3 h-3" /> Best in Show
                       </p>
-                      <p className="text-xs font-semibold text-slate-350">{session.groupWinner}</p>
+                      <p className="text-xs font-semibold text-slate-350">{displayGroupWinner}</p>
                     </div>
 
                     <div className="bg-slate-950 border border-slate-900 rounded-xl p-4 space-y-1">
@@ -182,7 +221,7 @@ export default function History({ voterName, onRefresh }: HistoryProps) {
                       <p className="text-[9px] text-purple-400 font-extrabold uppercase tracking-widest flex items-center gap-1">
                         <Award className="w-3 h-3" /> Giant Killer Match
                       </p>
-                      <p className="text-xs font-semibold text-slate-350 line-clamp-1">{session.giantKiller || "No giant killer matches logged"}</p>
+                      <p className="text-xs font-semibold text-slate-350 line-clamp-1">{displayGiantKiller || "No giant killer matches logged"}</p>
                     </div>
                   </div>
 

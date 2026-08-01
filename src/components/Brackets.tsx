@@ -304,16 +304,16 @@ export default function Brackets({
         <div className="hidden lg:flex flex-col justify-around h-[580px] -mx-4 z-0 pointer-events-none">
           <div className="flex items-center">
             <div className="bracket-node-connector-y h-[135px] relative">
-              <div className={`bracket-node-connector-x w-8 absolute top-0 ${matchWinners['Q1'] ? 'bracket-node-connector-active' : ''}`} />
-              <div className={`bracket-node-connector-x w-8 absolute bottom-0 ${matchWinners['Q2'] ? 'bracket-node-connector-active' : ''}`} />
-              <div className={`bracket-node-connector-x w-8 absolute top-1/2 ${matchWinners['Q1'] && matchWinners['Q2'] ? 'bracket-node-connector-active' : ''}`} />
+              <div className={`bracket-node-connector-x w-8 absolute top-0 ${getPersonalWinner('Q1') ? 'bracket-node-connector-active' : ''}`} />
+              <div className={`bracket-node-connector-x w-8 absolute bottom-0 ${getPersonalWinner('Q2') ? 'bracket-node-connector-active' : ''}`} />
+              <div className={`bracket-node-connector-x w-8 absolute top-1/2 ${getPersonalWinner('Q1') && getPersonalWinner('Q2') ? 'bracket-node-connector-active' : ''}`} />
             </div>
           </div>
           <div className="flex items-center">
             <div className="bracket-node-connector-y h-[135px] relative">
-              <div className={`bracket-node-connector-x w-8 absolute top-0 ${matchWinners['Q3'] ? 'bracket-node-connector-active' : ''}`} />
-              <div className={`bracket-node-connector-x w-8 absolute bottom-0 ${matchWinners['Q4'] ? 'bracket-node-connector-active' : ''}`} />
-              <div className={`bracket-node-connector-x w-8 absolute top-1/2 ${matchWinners['Q3'] && matchWinners['Q4'] ? 'bracket-node-connector-active' : ''}`} />
+              <div className={`bracket-node-connector-x w-8 absolute top-0 ${getPersonalWinner('Q3') ? 'bracket-node-connector-active' : ''}`} />
+              <div className={`bracket-node-connector-x w-8 absolute bottom-0 ${getPersonalWinner('Q4') ? 'bracket-node-connector-active' : ''}`} />
+              <div className={`bracket-node-connector-x w-8 absolute top-1/2 ${getPersonalWinner('Q3') && getPersonalWinner('Q4') ? 'bracket-node-connector-active' : ''}`} />
             </div>
           </div>
         </div>
@@ -328,9 +328,9 @@ export default function Brackets({
         {/* Connectors between S and F */}
         <div className="hidden lg:flex flex-col justify-center h-[580px] -mx-4 z-0 pointer-events-none">
           <div className="bracket-node-connector-y h-[215px] relative">
-            <div className={`bracket-node-connector-x w-8 absolute top-0 ${matchWinners['S1'] ? 'bracket-node-connector-active' : ''}`} />
-            <div className={`bracket-node-connector-x w-8 absolute bottom-0 ${matchWinners['S2'] ? 'bracket-node-connector-active' : ''}`} />
-            <div className={`bracket-node-connector-x w-8 absolute top-1/2 ${matchWinners['S1'] && matchWinners['S2'] ? 'bracket-node-connector-active' : ''}`} />
+            <div className={`bracket-node-connector-x w-8 absolute top-0 ${getPersonalWinner('S1') ? 'bracket-node-connector-active' : ''}`} />
+            <div className={`bracket-node-connector-x w-8 absolute bottom-0 ${getPersonalWinner('S2') ? 'bracket-node-connector-active' : ''}`} />
+            <div className={`bracket-node-connector-x w-8 absolute top-1/2 ${getPersonalWinner('S1') && getPersonalWinner('S2') ? 'bracket-node-connector-active' : ''}`} />
           </div>
         </div>
 
@@ -340,20 +340,24 @@ export default function Brackets({
           {renderMatchNode(matches[6])}
           
           {/* Trophy Room (Final Winner) */}
-          {matchWinners['F'] && (
-            <div className="mt-8 glass-panel border-gold-600/30 bg-gradient-to-b from-gold-950/20 to-slate-950 rounded-2xl p-6 text-center space-y-3 animate-fade-in max-w-xs mx-auto">
-              <Trophy className="w-12 h-12 text-gold-400 mx-auto drop-shadow-[0_0_15px_rgba(212,175,55,0.4)] animate-bounce" />
-              <div className="space-y-1">
-                <p className="text-[10px] text-gold-300 font-extrabold uppercase tracking-widest">Tournament Champion</p>
-                <h4 className="text-xl font-bold text-gold-100 font-serif">
-                  Wine {matchWinners['F']}
-                </h4>
-                <p className="text-xs text-slate-400 font-medium">
-                  {getWineDisplayName(matchWinners['F'])}
-                </p>
+          {(() => {
+            const finalChamp = getPersonalWinner('F');
+            if (!finalChamp) return null;
+            return (
+              <div className="mt-8 glass-panel border-gold-600/30 bg-gradient-to-b from-gold-950/20 to-slate-950 rounded-2xl p-6 text-center space-y-3 animate-fade-in max-w-xs mx-auto">
+                <Trophy className="w-12 h-12 text-gold-400 mx-auto drop-shadow-[0_0_15px_rgba(212,175,55,0.4)] animate-bounce" />
+                <div className="space-y-1">
+                  <p className="text-[10px] text-gold-300 font-extrabold uppercase tracking-widest">My Personal Champion</p>
+                  <h4 className="text-xl font-bold text-gold-100 font-serif">
+                    Wine {finalChamp}
+                  </h4>
+                  <p className="text-xs text-slate-400 font-medium">
+                    {getWineDisplayName(finalChamp)}
+                  </p>
+                </div>
               </div>
-            </div>
-          )}
+            );
+          })()}
         </div>
 
       </div>
