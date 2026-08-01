@@ -35,15 +35,53 @@ export default function Cellar({ voterName }: CellarProps) {
   const [mPrice, setMPrice] = useState('');
   const [mNote, setMNote] = useState('');
 
+  const getLocalWishlist = (name: string): WishlistItem[] => {
+    try {
+      const raw = localStorage.getItem(`WINE_TASTING_WISHLIST_${(name || 'guest').toLowerCase()}`);
+      return raw ? JSON.parse(raw) : [];
+    } catch (e) {
+      return [];
+    }
+  };
+
+  const saveLocalWishlist = (name: string, list: WishlistItem[]) => {
+    try {
+      localStorage.setItem(`WINE_TASTING_WISHLIST_${(name || 'guest').toLowerCase()}`, JSON.stringify(list));
+    } catch (e) {
+      console.warn('Failed to save wishlist locally:', e);
+    }
+  };
+
   const load = async () => {
     setLoading(true);
     try {
-      const [h, w] = await Promise.all([
-        db.getHistory(),
-        voterName ? db.getWishlist(voterName) : Promise.resolve([] as WishlistItem[])
-      ]);
+      const activeName = voterName || 'Guest';
+      const localItems = getLocalWishlist(activeName);
+      let dbItems: WishlistItem[] = [];
+
+      try {
+        dbItems = await db.getWishlist(activeName);
+      } catch (err) {
+        console.warn('DB wishlist query failed, falling back to local storage:', err);
+      }
+
+      // Merge local and DB items by wine name
+      const mergedMap = new Map<string, WishlistItem>();
+      localItems.forEach(item => mergedMap.set(item.wine_name.toLowerCase(), item));
+      dbItems.forEach(item => mergedMap.set(item.wine_name.toLowerCase(), item));
+
+      const mergedList = Array.from(mergedMap.values());
+      
+      let h: HistoricalTasting[] = [];
+      try {
+        h = await db.getHistory();
+      } catch (err) {
+        console.warn('DB history load error:', err);
+      }
+
       setHistory(h);
-      setWishlist(w);
+      setWishlist(mergedList);
+      saveLocalWishlist(activeName, mergedList);
     } catch (err) {
       console.error('Error loading cellar:', err);
     } finally {
@@ -57,7 +95,7 @@ export default function Cellar({ voterName }: CellarProps) {
   const allWines = useMemo<SearchRow[]>(() => {
     const rows: SearchRow[] = [];
     history.forEach(s => {
-      s.wines.forEach((w, i) => {
+      (s.wines || []).forEach((w, i) => {
         rows.push({
           key: `${s.id}-${i}`,
           name: w.name,
@@ -92,41 +130,92 @@ export default function Cellar({ voterName }: CellarProps) {
   );
 
   const addFromSearch = async (row: SearchRow) => {
-    if (!voterName || busy) return;
+    if (busy) return;
     setBusy(true);
+
+    const activeName = voterName || 'Guest';
+    const newItem: WishlistItem = {
+      id: 'wish-' + Date.now() + '-' + Math.random().toString(36).substring(2, 7),
+      voter_name: activeName,
+      wine_name: row.name,
+      varietal: row.varietal,
+      region: row.region,
+      price: row.price,
+      source_history_id: row.historyId,
+      created_at: new Date().toISOString()
+    };
+
+    // Optimistic local state update
+    setWishlist(prev => {
+      const updated = [newItem, ...prev.filter(w => w.wine_name.toLowerCase() !== row.name.toLowerCase())];
+      saveLocalWishlist(activeName, updated);
+      return updated;
+    });
+
     try {
-      const item = await db.addWishlistItem({
-        voter_name: voterName,
+      const dbItem = await db.addWishlistItem({
+        voter_name: activeName,
         wine_name: row.name,
         varietal: row.varietal,
         region: row.region,
         price: row.price,
         source_history_id: row.historyId
       });
-      setWishlist(prev => [item, ...prev]);
+      if (dbItem && dbItem.id) {
+        setWishlist(prev => {
+          const updated = prev.map(w => w.id === newItem.id ? dbItem : w);
+          saveLocalWishlist(activeName, updated);
+          return updated;
+        });
+      }
     } catch (err) {
-      console.error('Add to wishlist failed:', err);
+      console.warn('DB wishlist add sync error, preserved locally:', err);
     } finally {
       setBusy(false);
     }
   };
 
   const addManual = async () => {
-    if (!voterName || !mName.trim() || busy) return;
+    if (!mName.trim() || busy) return;
     setBusy(true);
+
+    const activeName = voterName || 'Guest';
+    const priceNum = parseFloat(mPrice);
+    const newItem: WishlistItem = {
+      id: 'wish-' + Date.now() + '-' + Math.random().toString(36).substring(2, 7),
+      voter_name: activeName,
+      wine_name: mName.trim(),
+      producer: mProducer.trim() || undefined,
+      price: isNaN(priceNum) ? undefined : priceNum,
+      note: mNote.trim() || undefined,
+      created_at: new Date().toISOString()
+    };
+
+    setWishlist(prev => {
+      const updated = [newItem, ...prev];
+      saveLocalWishlist(activeName, updated);
+      return updated;
+    });
+
+    setMName(''); setMProducer(''); setMPrice(''); setMNote('');
+
     try {
-      const priceNum = parseFloat(mPrice);
-      const item = await db.addWishlistItem({
-        voter_name: voterName,
-        wine_name: mName.trim(),
-        producer: mProducer.trim() || undefined,
-        price: isNaN(priceNum) ? undefined : priceNum,
-        note: mNote.trim() || undefined
+      const dbItem = await db.addWishlistItem({
+        voter_name: activeName,
+        wine_name: newItem.wine_name,
+        producer: newItem.producer,
+        price: newItem.price,
+        note: newItem.note
       });
-      setWishlist(prev => [item, ...prev]);
-      setMName(''); setMProducer(''); setMPrice(''); setMNote('');
+      if (dbItem && dbItem.id) {
+        setWishlist(prev => {
+          const updated = prev.map(w => w.id === newItem.id ? dbItem : w);
+          saveLocalWishlist(activeName, updated);
+          return updated;
+        });
+      }
     } catch (err) {
-      console.error('Manual add failed:', err);
+      console.warn('DB wishlist manual add sync error, preserved locally:', err);
     } finally {
       setBusy(false);
     }
@@ -135,11 +224,18 @@ export default function Cellar({ voterName }: CellarProps) {
   const remove = async (id: string) => {
     if (busy) return;
     setBusy(true);
+
+    const activeName = voterName || 'Guest';
+    setWishlist(prev => {
+      const updated = prev.filter(w => w.id !== id);
+      saveLocalWishlist(activeName, updated);
+      return updated;
+    });
+
     try {
       await db.removeWishlistItem(id);
-      setWishlist(prev => prev.filter(w => w.id !== id));
     } catch (err) {
-      console.error('Remove failed:', err);
+      console.warn('DB wishlist remove sync error, removed locally:', err);
     } finally {
       setBusy(false);
     }
