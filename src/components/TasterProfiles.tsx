@@ -408,7 +408,7 @@ export default function TasterProfiles({ voterName }: TasterProfilesProps) {
                       {ally && (
                         <div className="rounded-xl border border-emerald-900/40 bg-emerald-950/20 p-3">
                           <p className="text-[10px] uppercase tracking-widest text-emerald-400 font-bold flex items-center gap-1.5 flex-wrap">
-                            <Handshake className="w-3.5 h-3.5 shrink-0" /> Palate twin <span className="text-emerald-500 font-normal lowercase tracking-normal">(AKA Taste Bud)</span>
+                            <Handshake className="w-3.5 h-3.5 shrink-0" /> Taste bud <span className="text-emerald-500 font-normal lowercase tracking-normal">(AKA Palate Twin)</span>
                           </p>
                           <p className="text-sm font-semibold text-slate-200 mt-1">{ally.other}</p>
                           <p className="text-[11px] text-slate-500">{pct(ally.share)} agreement over {ally.shared} shared calls</p>
@@ -417,7 +417,7 @@ export default function TasterProfiles({ voterName }: TasterProfilesProps) {
                       {rival && rival.other !== ally?.other && (
                         <div className="rounded-xl border border-rose-900/40 bg-rose-950/20 p-3">
                           <p className="text-[10px] uppercase tracking-widest text-rose-400 font-bold flex items-center gap-1.5 flex-wrap">
-                            <Swords className="w-3.5 h-3.5 shrink-0" /> Opposite palate <span className="text-rose-500 font-normal lowercase tracking-normal">(AKA Flavor Foil)</span>
+                            <Swords className="w-3.5 h-3.5 shrink-0" /> Flavor foil <span className="text-rose-500 font-normal lowercase tracking-normal">(AKA Opposite Palate)</span>
                           </p>
                           <p className="text-sm font-semibold text-slate-200 mt-1">{rival.other}</p>
                           <p className="text-[11px] text-slate-500">{pct(rival.share)} agreement over {rival.shared} shared calls</p>
