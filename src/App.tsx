@@ -333,8 +333,36 @@ export default function App() {
       });
 
       const bestValue = [...wineStats].sort((a, b) => b.valueRatio - a.valueRatio)[0];
-      const bisLabel = updatedSession?.match_winners?.['F'];
-      const bisWine = wineStats.find(w => w.blind_label === bisLabel);
+
+      // Calculate crowd consensus match winners from all votes cast
+      const getMatchWinner = (w1?: string, w2?: string): string | undefined => {
+        if (!w1 || !w2) return w1 || w2;
+        const matchVotes = votes.filter(v => 
+          (v.wine_1_label === w1 && v.wine_2_label === w2) ||
+          (v.wine_1_label === w2 && v.wine_2_label === w1)
+        );
+        if (matchVotes.length === 0) return w1;
+        let w1ScoreSum = 0;
+        matchVotes.forEach(v => {
+          w1ScoreSum += (v.wine_1_label === w1) ? (100 - v.slider_value) : v.slider_value;
+        });
+        const avgW1 = w1ScoreSum / matchVotes.length;
+        return avgW1 >= 50 ? w1 : w2;
+      };
+
+      const cQ1 = getMatchWinner('A', 'B') || 'A';
+      const cQ2 = getMatchWinner('C', 'D') || 'C';
+      const cQ3 = getMatchWinner('E', 'F') || 'E';
+      const cQ4 = getMatchWinner('G', 'H') || 'G';
+      const cS1 = getMatchWinner(cQ1, cQ2) || cQ1;
+      const cS2 = getMatchWinner(cQ3, cQ4) || cQ3;
+      const cF  = getMatchWinner(cS1, cS2) || cS1;
+
+      const computedMatchWinners = { Q1: cQ1, Q2: cQ2, Q3: cQ3, Q4: cQ4, S1: cS1, S2: cS2, F: cF };
+      const effectiveMatchWinners = { ...computedMatchWinners, ...(updatedSession?.match_winners || {}) };
+
+      const bisLabel = effectiveMatchWinners['F'];
+      const bisWine = wineStats.find(w => w.blind_label === bisLabel) || sorted[0];
 
       // Find giant killer match
       let giantKillerMatch: string | undefined = undefined;
@@ -344,13 +372,13 @@ export default function App() {
         { id: 'Q2', w1: 'C', w2: 'D' },
         { id: 'Q3', w1: 'E', w2: 'F' },
         { id: 'Q4', w1: 'G', w2: 'H' },
-        { id: 'S1', w1: updatedSession?.match_winners?.['Q1'], w2: updatedSession?.match_winners?.['Q2'] },
-        { id: 'S2', w1: updatedSession?.match_winners?.['Q3'], w2: updatedSession?.match_winners?.['Q4'] },
-        { id: 'F', w1: updatedSession?.match_winners?.['S1'], w2: updatedSession?.match_winners?.['S2'] }
+        { id: 'S1', w1: effectiveMatchWinners['Q1'], w2: effectiveMatchWinners['Q2'] },
+        { id: 'S2', w1: effectiveMatchWinners['Q3'], w2: effectiveMatchWinners['Q4'] },
+        { id: 'F', w1: effectiveMatchWinners['S1'], w2: effectiveMatchWinners['S2'] }
       ];
 
       matchesList.forEach(m => {
-        const winnerLabel = updatedSession?.match_winners?.[m.id];
+        const winnerLabel = effectiveMatchWinners[m.id as keyof typeof effectiveMatchWinners];
         if (!winnerLabel || !m.w1 || !m.w2) return;
         const loserLabel = winnerLabel === m.w1 ? m.w2 : m.w1;
         const winner = wineStats.find(w => w.blind_label === winnerLabel);
@@ -369,11 +397,11 @@ export default function App() {
         id: activeSession.id,
         name: activeSession.name,
         date: activeSession.date,
-        winnerName: bisWine?.name || "Unknown",
-        winnerPrice: bisWine?.price || 0,
-        winnerBroughtBy: bisWine?.submitted_by || "Unknown",
+        winnerName: bisWine?.name || (sorted[0] ? sorted[0].name : "Unknown"),
+        winnerPrice: bisWine?.price || (sorted[0] ? sorted[0].price : 0),
+        winnerBroughtBy: bisWine?.submitted_by || (sorted[0] ? sorted[0].submitted_by : "Unknown"),
         winesCount: updatedWines.length,
-        groupWinner: bisWine ? `${bisWine.name} ($${bisWine.price.toFixed(2)})` : "N/A",
+        groupWinner: bisWine ? `${bisWine.name} ($${bisWine.price.toFixed(2)})` : (sorted[0] ? `${sorted[0].name} ($${sorted[0].price.toFixed(2)})` : "N/A"),
         secondPlace: sorted[1] ? `${sorted[1].name} ($${sorted[1].price.toFixed(2)})` : "N/A",
         bestValue: bestValue ? `${bestValue.name} ($${bestValue.price.toFixed(2)})` : "N/A",
         giantKiller: giantKillerMatch,

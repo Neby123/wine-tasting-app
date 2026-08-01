@@ -140,9 +140,40 @@ export default function Dashboard({
   const getAwards = () => {
     if (wines.length === 0) return null;
 
+    // Calculate crowd consensus match winners from all votes cast
+    const getMatchWinner = (w1?: string, w2?: string): string | undefined => {
+      if (!w1 || !w2) return w1 || w2;
+      const matchVotes = votes.filter(v => 
+        (v.wine_1_label === w1 && v.wine_2_label === w2) ||
+        (v.wine_1_label === w2 && v.wine_2_label === w1)
+      );
+      if (matchVotes.length === 0) return w1;
+      let w1ScoreSum = 0;
+      matchVotes.forEach(v => {
+        w1ScoreSum += (v.wine_1_label === w1) ? (100 - v.slider_value) : v.slider_value;
+      });
+      const avgW1 = w1ScoreSum / matchVotes.length;
+      return avgW1 >= 50 ? w1 : w2;
+    };
+
+    const cQ1 = getMatchWinner('A', 'B') || 'A';
+    const cQ2 = getMatchWinner('C', 'D') || 'C';
+    const cQ3 = getMatchWinner('E', 'F') || 'E';
+    const cQ4 = getMatchWinner('G', 'H') || 'G';
+    const cS1 = getMatchWinner(cQ1, cQ2) || cQ1;
+    const cS2 = getMatchWinner(cQ3, cQ4) || cQ3;
+    const cF  = getMatchWinner(cS1, cS2) || cS1;
+
+    const computedMatchWinners = { Q1: cQ1, Q2: cQ2, Q3: cQ3, Q4: cQ4, S1: cS1, S2: cS2, F: cF };
+    const effectiveMatchWinners = { ...computedMatchWinners, ...matchWinners };
+
     // 1. Best in Show (Final bracket winner)
-    const bisLabel = matchWinners['F'];
-    const bestInShow = wineStats.find(w => w.blind_label === bisLabel);
+    const bisLabel = effectiveMatchWinners['F'];
+    const sortedByRank = [...wineStats].sort((a, b) => {
+      if (b.wins !== a.wins) return b.wins - a.wins;
+      return b.score - a.score;
+    });
+    const bestInShow = wineStats.find(w => w.blind_label === bisLabel) || sortedByRank[0];
 
     // 2. People's Choice (Highest average rating)
     const peoplesChoice = [...wineStats].sort((a, b) => b.score - a.score)[0];

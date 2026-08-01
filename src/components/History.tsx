@@ -125,19 +125,31 @@ export default function History({ voterName, onRefresh }: HistoryProps) {
 
                 <div className="flex items-center gap-6">
                   {/* Quick Winner Badge */}
-                  <div className="text-right">
-                    <p className="text-[10px] text-gold-400 font-extrabold uppercase tracking-widest flex items-center justify-end gap-1">
-                      <Trophy className="w-3 h-3" /> Winner
-                    </p>
-                    <p className="text-sm font-semibold text-slate-250 leading-tight">
-                      {session.winnerName}
-                    </p>
-                    {session.winnerBroughtBy && session.winnerBroughtBy !== 'Guest' && (
-                      <p className="text-xs text-slate-500">
-                        Brought by: {session.winnerBroughtBy}
-                      </p>
-                    )}
-                  </div>
+                  {(() => {
+                    const topWine = sortedWines[0];
+                    const displayWinner = (session.winnerName && session.winnerName !== 'Unknown') 
+                      ? session.winnerName 
+                      : (topWine ? topWine.name : 'Unknown');
+                    const displayBroughtBy = (session.winnerBroughtBy && session.winnerBroughtBy !== 'Unknown') 
+                      ? session.winnerBroughtBy 
+                      : (topWine ? topWine.submitted_by : '');
+
+                    return (
+                      <div className="text-right">
+                        <p className="text-[10px] text-gold-400 font-extrabold uppercase tracking-widest flex items-center justify-end gap-1">
+                          <Trophy className="w-3 h-3" /> Winner
+                        </p>
+                        <p className="text-sm font-semibold text-slate-250 leading-tight">
+                          {displayWinner}
+                        </p>
+                        {displayBroughtBy && displayBroughtBy !== 'Guest' && (
+                          <p className="text-xs text-slate-500">
+                            Brought by: {displayBroughtBy}
+                          </p>
+                        )}
+                      </div>
+                    );
+                  })()}
 
                   {/* Expand icon */}
                   <div className="text-slate-500 bg-slate-950 p-2 rounded-full border border-slate-850">
