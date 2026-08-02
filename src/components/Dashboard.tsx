@@ -75,16 +75,21 @@ export default function Dashboard({
   // For each vote containing wine's label, add score:
   // if wine is wine_1, score is (100 - slider_value)
   // if wine is wine_2, score is slider_value
-  const getWineAppreciationIndex = (label: string): number => {
-    const wineVotes = votes.filter(v => v.wine_1_label === label || v.wine_2_label === label);
+  const getWineAppreciationIndex = (label: string) => {
+    const wineVotes = votes.filter(
+      v => v.wine_1_label === label || v.wine_2_label === label
+    );
+
     if (wineVotes.length === 0) return 50; // Neutral baseline
 
     let scoreSum = 0;
     wineVotes.forEach(v => {
-      if (v.wine_1_label === label) {
-        scoreSum += (100 - v.slider_value);
-      } else {
+      if (v.match_id?.startsWith('STANDALONE_') || v.wine_1_label === v.wine_2_label) {
         scoreSum += v.slider_value;
+      } else if (v.wine_1_label === label) {
+        scoreSum += v.slider_value;
+      } else {
+        scoreSum += (100 - v.slider_value);
       }
     });
 
@@ -148,10 +153,10 @@ export default function Dashboard({
         };
       });
 
-  // Sort stats by wins (primary) and appreciation index (secondary)
+  // Sort stats by average appreciation score (primary) and head-to-head wins (secondary)
   const leaderboard = [...wineStats].sort((a, b) => {
-    if (b.wins !== a.wins) return b.wins - a.wins;
-    return b.score - a.score;
+    if (b.score !== a.score) return b.score - a.score;
+    return b.wins - a.wins;
   });
 
   // Calculate Awards
