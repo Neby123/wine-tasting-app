@@ -50,19 +50,16 @@ export default function Brackets({
 
     if (!vote) return null;
 
+    const isStandalone = vote.match_id?.startsWith('STANDALONE_') || vote.wine_1_label === vote.wine_2_label;
     const isWine1 = vote.wine_1_label === label;
     const notes = isWine1 ? vote.notes_wine_1 : vote.notes_wine_2;
-    
-    // Calculate preference score relative to this wine (0-100)
-    // If it's wine_1, score is (100 - slider_value)
-    // If it's wine_2, score is slider_value
-    const score = isWine1 ? (100 - vote.slider_value) : vote.slider_value;
+    const score = isStandalone ? vote.slider_value : (isWine1 ? (100 - vote.slider_value) : vote.slider_value);
 
     return {
       notes: notes?.trim() || "No notes logged.",
       score,
-      matchId: vote.match_id,
-      opponent: isWine1 ? vote.wine_2_label : vote.wine_1_label
+      matchId: isStandalone ? 'Standalone Rating' : vote.match_id,
+      opponent: isStandalone ? undefined : (isWine1 ? vote.wine_2_label : vote.wine_1_label)
     };
   };
 

@@ -28,14 +28,16 @@ const getSBConfig = () => {
   return null;
 };
 
-// Synchronously ensure voter token exists
+// Synchronously ensure voter token exists (RFC4122 compliant UUID)
 const getOrGenerateVoterToken = () => {
   let token = localStorage.getItem('WINE_TASTING_VOTER_TOKEN');
   if (!token) {
     if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
       token = crypto.randomUUID();
     } else {
-      token = 'voter-' + Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
+      token = '10000000-1000-4000-8000-100000000000'.replace(/[018]/g, c =>
+        (+c ^ (typeof crypto !== 'undefined' && crypto.getRandomValues ? crypto.getRandomValues(new Uint8Array(1))[0] : Math.floor(Math.random() * 16)) & 15 >> +c / 4).toString(16)
+      );
     }
     localStorage.setItem('WINE_TASTING_VOTER_TOKEN', token);
   }
@@ -364,6 +366,7 @@ export const db = {
   },
 
   removeWishlistItem: async (id: string): Promise<void> => {
+    if (!id || id.startsWith('wish-')) return; // Skip temp local IDs to avoid Postgres UUID type error
     const client = ensureClient();
     const { error } = await client
       .from('wishlist')

@@ -22,13 +22,23 @@ export default function Dashboard({
   onResetSession
 }: DashboardProps) {
   const [activeTab, setActiveTab] = useState<'status' | 'analysis'>('status');
-  const [mapping, setMapping] = useState<Record<string, string>>({
-    A: '', B: '', C: '', D: '', E: '', F: '', G: '', H: ''
-  });
+  const [mapping, setMapping] = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    if (wines.length > 0) {
+      const initialMapping: Record<string, string> = {};
+      wines.forEach((w, idx) => {
+        const label = w.blind_label || String.fromCharCode(65 + idx);
+        initialMapping[label] = mapping[label] || '';
+      });
+      setMapping(initialMapping);
+    }
+  }, [wines]);
 
   const selectedWineIds = Object.values(mapping).filter(Boolean);
   const hasDuplicates = selectedWineIds.length !== new Set(selectedWineIds).size;
-  const canSubmitReveal = selectedWineIds.length === 8 && !hasDuplicates;
+  const targetCount = wines.length > 0 ? wines.length : 6;
+  const canSubmitReveal = selectedWineIds.length === targetCount && !hasDuplicates;
   const isRevealed = wines.some(w => w.revealed);
 
   useEffect(() => {
@@ -87,9 +97,9 @@ export default function Dashboard({
       if (v.match_id?.startsWith('STANDALONE_') || v.wine_1_label === v.wine_2_label) {
         scoreSum += v.slider_value;
       } else if (v.wine_1_label === label) {
-        scoreSum += v.slider_value;
-      } else {
         scoreSum += (100 - v.slider_value);
+      } else {
+        scoreSum += v.slider_value;
       }
     });
 
@@ -105,6 +115,7 @@ export default function Dashboard({
         // Count head-to-head battle victories across all votes cast by tasters
         let wins = 0;
         votes.forEach(v => {
+          if (v.match_id?.startsWith('STANDALONE_') || v.wine_1_label === v.wine_2_label) return;
           if (v.wine_1_label === label && v.slider_value < 50) wins++;
           if (v.wine_2_label === label && v.slider_value > 50) wins++;
         });
@@ -118,7 +129,7 @@ export default function Dashboard({
           ...w,
           score,
           wins,
-          valueRatio: score / Math.max(1, w.price) // score per dollar
+          valueRatio: score / Math.max(1, w.price || 1) // score per dollar
         };
       })
     : (wines.length > 0 ? wines.map((w, idx) => w.blind_label || String.fromCharCode(65 + idx)) : ['A', 'B', 'C', 'D', 'E', 'F']).map(label => {
@@ -126,6 +137,7 @@ export default function Dashboard({
         
         let wins = 0;
         votes.forEach(v => {
+          if (v.match_id?.startsWith('STANDALONE_') || v.wine_1_label === v.wine_2_label) return;
           if (v.wine_1_label === label && v.slider_value < 50) wins++;
           if (v.wine_2_label === label && v.slider_value > 50) wins++;
         });
@@ -180,35 +192,41 @@ export default function Dashboard({
       ? [...expensiveWines].sort((a, b) => a.valueRatio - b.valueRatio)[0]
       : [...wineStats].sort((a, b) => a.valueRatio - b.valueRatio)[0];
 
-    // 5. Giant Killer: Cheapest wine that won a match against an expensive wine
-    // Scan all completed matches
+    // 5. Giant Killer: Cheapest wine that outperformed a significantly more expensive wine
     let giantKillerMatch: any = null;
 
-    const matchesList = [
-      { id: 'Q1', w1: 'A', w2: 'B' },
-      { id: 'Q2', w1: 'C', w2: 'D' },
-      { id: 'Q3', w1: 'E', w2: 'F' },
-      { id: 'Q4', w1: 'G', w2: 'H' },
-      { id: 'S1', w1: matchWinners['Q1'], w2: matchWinners['Q2'] },
-      { id: 'S2', w1: matchWinners['Q3'], w2: matchWinners['Q4'] },
-      { id: 'F', w1: matchWinners['S1'], w2: matchWinners['S2'] }
-    ];
+    votes.forEach(v => {
+      if (v.match_id?.startsWith('STANDALONE_') || v.wine_1_label === v.wine_2_label) return;
+      const w1 = wineStats.find(w => w.blind_label === v.wine_1_label);
+      const w2 = wineStats.find(w => w.blind_label === v.wine_2_label);
+      if (!w1 || !w2) return;
 
-    matchesList.forEach(m => {
-      const winnerLabel = matchWinners[m.id];
-      if (!winnerLabel || !m.w1 || !m.w2) return;
+      const winner = v.slider_value < 50 ? w1 : v.slider_value > 50 ? w2 : null;
+      const loser = winner === w1 ? w2 : w1;
 
-      const loserLabel = winnerLabel === m.w1 ? m.w2 : m.w1;
-      const winner = wineStats.find(w => w.blind_label === winnerLabel);
-      const loser = wineStats.find(w => w.blind_label === loserLabel);
-
-      if (winner && loser && winner.price < loser.price) {
-        const margin = loser.price - winner.price;
+      if (winner && loser && (winner.price ?? 0) < (loser.price ?? 0)) {
+        const margin = (loser.price ?? 0) - (winner.price ?? 0);
         if (!giantKillerMatch || margin > giantKillerMatch.margin) {
-          giantKillerMatch = { matchId: m.id, winner, loser, margin };
+          giantKillerMatch = { matchId: v.match_id, winner, loser, margin };
         }
       }
     });
+
+    if (!giantKillerMatch && wineStats.length >= 2) {
+      const sortedByPrice = [...wineStats].filter(w => typeof w.price === 'number' && w.price > 0).sort((a, b) => (a.price || 0) - (b.price || 0));
+      if (sortedByPrice.length >= 2) {
+        const cheapest = sortedByPrice[0];
+        const pricierOutperformed = sortedByPrice.slice(1).find(w => w.price > cheapest.price && cheapest.score > w.score);
+        if (pricierOutperformed) {
+          giantKillerMatch = {
+            matchId: 'Decoupled Rating',
+            winner: cheapest,
+            loser: pricierOutperformed,
+            margin: pricierOutperformed.price - cheapest.price
+          };
+        }
+      }
+    }
 
     return {
       bestInShow,
@@ -437,18 +455,19 @@ export default function Dashboard({
                   <p className="text-xs text-slate-500 italic py-2">No active tasters registered yet.</p>
                 ) : (
                   allVoters.map((name) => {
-                    const votesCount = votes.filter(v => v.voter_name.toLowerCase() === name.toLowerCase()).length;
-                    const isComplete = votesCount >= 7; // 4 QF + 2 SF + 1 Final = 7 votes
+                    const votesCount = votes.filter(v => (v.voter_name || '').toLowerCase() === name.toLowerCase()).length;
+                    const expectedVotes = wines.length > 0 ? wines.length : 6;
+                    const isComplete = votesCount >= expectedVotes;
                     return (
                       <div key={name} className="flex justify-between items-center text-xs bg-slate-950/40 px-3 py-2 rounded-lg border border-slate-850/40">
                         <span className="font-semibold text-slate-350">{name}</span>
                         {isComplete ? (
                           <span className="text-emerald-400 bg-emerald-950/30 px-2.5 py-0.5 rounded-full border border-emerald-900/30 font-bold flex items-center gap-1">
-                            ✓ Complete (7/7)
+                            ✓ Complete ({votesCount}/{expectedVotes})
                           </span>
                         ) : votesCount > 0 ? (
                           <span className="text-amber-400 bg-amber-950/30 px-2.5 py-0.5 rounded-full border border-amber-900/30 font-bold">
-                            In Progress ({votesCount}/7)
+                            In Progress ({votesCount}/{expectedVotes})
                           </span>
                         ) : (
                           <span className="text-slate-500 bg-slate-900 px-2.5 py-0.5 rounded-full">

@@ -49,16 +49,18 @@ export default function History({ voterName, onRefresh }: HistoryProps) {
     if (votes.length === 0) return null;
     
     return votes.map(v => {
+      const isStandalone = v.match_id?.startsWith('STANDALONE_') || v.wine_1_label === v.wine_2_label;
       const isWine1 = v.wine_1_label === label;
-      const preferenceVal = isWine1 ? (100 - v.slider_value) : v.slider_value;
+      const preferenceVal = isStandalone ? v.slider_value : (isWine1 ? (100 - v.slider_value) : v.slider_value);
       const notes = isWine1 ? v.notes_wine_1 : v.notes_wine_2;
-      const opponent = isWine1 ? v.wine_2_label : v.wine_1_label;
+      const opponent = isStandalone ? undefined : (isWine1 ? v.wine_2_label : v.wine_1_label);
       
       return {
-        matchId: v.match_id,
+        matchId: isStandalone ? 'Standalone Rating' : v.match_id,
         opponent,
         notes: notes?.trim(),
-        score: preferenceVal
+        score: preferenceVal,
+        isStandalone
       };
     });
   };
@@ -360,11 +362,13 @@ export default function History({ voterName, onRefresh }: HistoryProps) {
                                               <div className="flex justify-between items-start gap-2">
                                                 <div className="flex flex-col">
                                                   <span className="text-slate-500 text-[8px] font-extrabold uppercase tracking-widest leading-none mb-0.5">{roundName}</span>
-                                                  <span className="text-slate-300 font-semibold line-clamp-1">vs {opponentName}</span>
+                                                  {ev.opponent && <span className="text-slate-300 font-semibold line-clamp-1">vs {opponentName}</span>}
                                                 </div>
-                                                <span className={`shrink-0 font-bold ${isWin ? 'text-emerald-400' : 'text-slate-500 line-through'}`}>
-                                                  {isWin ? 'Win' : 'Loss'}
-                                                </span>
+                                                {!ev.isStandalone && (
+                                                  <span className={`shrink-0 font-bold ${isWin ? 'text-emerald-400' : 'text-slate-500 line-through'}`}>
+                                                    {isWin ? 'Win' : 'Loss'}
+                                                  </span>
+                                                )}
                                               </div>
                                               {ev.notes && (
                                                 <p className="text-slate-450 italic mt-0.5 font-sans">

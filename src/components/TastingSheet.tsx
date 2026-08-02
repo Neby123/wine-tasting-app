@@ -105,10 +105,16 @@ export default function TastingSheet({
   };
 
   // Calculate personal leaderboard from scores
-  const ratedWinesCount = wines.filter(w => {
-    const label = w.blind_label || w.id;
-    return votes.some(v => v.voter_name === voterName && (v.wine_1_label === label || v.match_id === `STANDALONE_${label}`));
+  const ratedWinesCount = wines.filter((w, idx) => {
+    const label = w.blind_label || String.fromCharCode(65 + idx);
+    return votes.some(v => 
+      (v.voter_name || '').trim().toLowerCase() === (voterName || '').trim().toLowerCase() && 
+      (v.wine_1_label === label || v.match_id === `STANDALONE_${label}`)
+    );
   }).length;
+
+  const totalWinesCount = wines?.length || 6;
+  const progressPercent = Math.round((ratedWinesCount / totalWinesCount) * 100);
 
   return (
     <div className="max-w-2xl mx-auto space-y-6 animate-fade-in pb-12">
@@ -125,13 +131,13 @@ export default function TastingSheet({
 
         {/* Progress Bar */}
         <div className="pt-2 flex items-center justify-between text-xs font-semibold text-slate-400 max-w-xs mx-auto">
-          <span>Completed: {ratedWinesCount} of {wines.length}</span>
-          <span className="text-wine-300 font-mono">{Math.round((ratedWinesCount / (wines.length || 1)) * 100)}%</span>
+          <span>Completed: {ratedWinesCount} of {totalWinesCount}</span>
+          <span className="text-wine-300 font-mono">{progressPercent}%</span>
         </div>
         <div className="w-full bg-slate-900 h-2 rounded-full overflow-hidden border border-slate-800 max-w-xs mx-auto">
           <div 
             className="bg-gradient-to-r from-wine-600 to-amber-500 h-full transition-all duration-500 rounded-full"
-            style={{ width: `${(ratedWinesCount / (wines.length || 1)) * 100}%` }}
+            style={{ width: `${progressPercent}%` }}
           />
         </div>
       </div>
