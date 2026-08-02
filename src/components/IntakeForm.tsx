@@ -32,7 +32,15 @@ export default function IntakeForm({
   onDeleteWine,
   onStartTasting
 }: IntakeFormProps) {
+  const [submittedBy, setSubmittedBy] = useState(voterName || '');
   const [wineName, setWineName] = useState('');
+
+  // Pre-fill submittedBy when voterName changes
+  React.useEffect(() => {
+    if (voterName && !submittedBy) {
+      setSubmittedBy(voterName);
+    }
+  }, [voterName]);
   const [producer, setProducer] = useState('');
   const [vintage, setVintage] = useState('');
   const [price, setPrice] = useState('');
@@ -81,8 +89,9 @@ export default function IntakeForm({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!voterName.trim()) {
-      setErrorMsg("Please enter your name in the settings or at the top of the page first!");
+    const contributor = submittedBy.trim() || voterName.trim();
+    if (!contributor) {
+      setErrorMsg("Please enter who brought this bottle!");
       return;
     }
     if (!wineName.trim() || !price.trim()) {
@@ -101,7 +110,7 @@ export default function IntakeForm({
 
     try {
       await onAddWine({
-        submitted_by: voterName,
+        submitted_by: contributor,
         name: wineName.trim(),
         producer: producer.trim() || undefined,
         vintage: vintage.trim() || undefined,
@@ -154,22 +163,41 @@ export default function IntakeForm({
             <form onSubmit={handleSubmit} className="space-y-4">
               <div>
                 <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1">
-                  Contributor Name (You)
+                  Brought By / Contributor <span className="text-rose-400">*</span>
                 </label>
-                <div className="relative">
-                  <span className="absolute inset-y-0 left-0 pl-3 flex items-center text-slate-500">
-                    <User className="w-4 h-4" />
-                  </span>
-                  <input
-                    type="text"
-                    disabled
-                    value={voterName || "Please set your name in settings"}
-                    className="w-full pl-9 pr-3 py-2 bg-slate-950/80 border border-slate-800 rounded-lg text-slate-400 text-sm focus:outline-none"
-                  />
+                <div className="space-y-2">
+                  {/* Quick Preset Selector for your guest couples */}
+                  <div className="flex flex-wrap gap-1.5">
+                    {['Ben & Monica', 'Jack & Alexcia', 'David & Abby'].map(couple => (
+                      <button
+                        type="button"
+                        key={couple}
+                        onClick={() => setSubmittedBy(couple)}
+                        className={`py-1 px-2.5 rounded-lg text-xs font-semibold border transition-all ${
+                          submittedBy === couple
+                            ? 'bg-amber-500/20 border-amber-400 text-amber-200'
+                            : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-slate-200'
+                        }`}
+                      >
+                        {couple}
+                      </button>
+                    ))}
+                  </div>
+
+                  <div className="relative">
+                    <span className="absolute inset-y-0 left-0 pl-3 flex items-center text-slate-500">
+                      <User className="w-4 h-4" />
+                    </span>
+                    <input
+                      type="text"
+                      required
+                      placeholder="e.g. Jack & Alexcia"
+                      value={submittedBy}
+                      onChange={(e) => setSubmittedBy(e.target.value)}
+                      className="w-full pl-9 pr-3 py-2 bg-slate-950 border border-slate-800 focus:border-wine-500 rounded-lg text-slate-200 text-sm focus:outline-none focus:ring-1 focus:ring-wine-500 font-semibold"
+                    />
+                  </div>
                 </div>
-                {!voterName && (
-                  <p className="text-rose-400 text-xs mt-1">Please enter your name at the top of the dashboard first.</p>
-                )}
               </div>
 
               <div>
