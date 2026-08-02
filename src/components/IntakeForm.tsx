@@ -349,7 +349,7 @@ export default function IntakeForm({
             <div className="flex justify-between items-center border-b border-slate-800 pb-3">
               <h3 className="text-lg font-semibold text-slate-200 flex items-center gap-2">
                 <WineIcon className="w-5 h-5 text-wine-400" />
-                Submitted Registry ({wines.length} of 8 bottles)
+                Submitted Registry ({wines.length} bottle{wines.length === 1 ? '' : 's'})
               </h3>
               {isHost && (
                 <span className="text-xs bg-wine-900/50 border border-wine-700/50 px-2.5 py-1 rounded-full text-wine-300 font-semibold tracking-wide">
@@ -425,24 +425,24 @@ export default function IntakeForm({
               </div>
             )}
 
-            {/* Host actions once exactly 8 wines are registered */}
+            {/* Host actions to launch tasting */}
             {isHost && (
-              <div className="mt-6 border-t border-slate-800 pt-6 space-y-4">
+              <div className="mt-6 border-t border-slate-850 pt-6 space-y-4">
                 <div className="bg-slate-950/60 border border-slate-800 rounded-xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                   <div className="space-y-1">
-                    <p className="text-sm font-semibold text-slate-300">Host Launch Pad</p>
-                    <p className="text-xs text-slate-500">
-                      {wines.length === 8
-                        ? "Ready to initiate! Please physically place the 8 bottles into paper bags A-H in a completely random order, keeping the assignments blind to everyone. Once bagged, click Generate Bracket to open voting."
-                        : `Need exactly 8 wines to build the bracket (currently at ${wines.length}).`}
+                    <p className="text-sm font-semibold text-slate-200">Host Launch Pad</p>
+                    <p className="text-xs text-slate-400">
+                      {wines.length >= 1
+                        ? `Ready to initiate! Place your ${wines.length} bottle${wines.length === 1 ? '' : 's'} into blind bags (A, B, C...) in random order. Once ready, click Start Tasting Session.`
+                        : "Register at least 1 bottle to launch the tasting session."}
                     </p>
                   </div>
                   <button
                     onClick={onStartTasting}
-                    disabled={wines.length !== 8}
-                    className="py-2 px-6 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 disabled:from-slate-800 disabled:to-slate-900 disabled:text-slate-500 text-slate-950 font-bold rounded-lg text-sm transition-all flex items-center justify-center gap-2 shadow-lg shadow-amber-950/20"
+                    disabled={wines.length < 1}
+                    className="py-2.5 px-6 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 disabled:from-slate-800 disabled:to-slate-900 disabled:text-slate-500 text-slate-950 font-bold rounded-xl text-sm transition-all flex items-center justify-center gap-2 shadow-lg shadow-amber-950/20 whitespace-nowrap"
                   >
-                    Generate Bracket
+                    Start Tasting Session
                   </button>
                 </div>
               </div>
