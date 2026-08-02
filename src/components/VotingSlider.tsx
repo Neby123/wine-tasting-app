@@ -233,62 +233,63 @@ export default function VotingSlider({
                 </div>
               </div>
 
-              {/* Metric 3: 3-Pillar Sensory DNA */}
-              <div className="w-full space-y-2 pt-2 border-t border-slate-850 text-left">
-                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Sensory DNA (1-5)</label>
-                <div className="space-y-1.5">
-                  <div className="flex items-center justify-between text-xs">
-                    <span className="text-slate-400">Acidity (Soft → Tart)</span>
-                    <div className="flex gap-1">
-                      {[1, 2, 3, 4, 5].map(v => (
-                        <button
-                          type="button"
-                          key={v}
-                          onClick={() => setAcidity1(acidity1 === v ? undefined : v)}
-                          className={`w-6 h-6 rounded-md text-xs font-bold transition-all ${
-                            acidity1 === v ? 'bg-wine-600 text-white' : 'bg-slate-950 text-slate-500 hover:text-slate-300'
-                          }`}
-                        >
-                          {v}
-                        </button>
-                      ))}
+              {/* Metric 3: 3-Pillar Sensory DNA (Smooth Sliders - Optional) */}
+              <div className="w-full space-y-3 pt-3 border-t border-slate-850 text-left">
+                <div className="flex justify-between items-center">
+                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Sensory DNA (Optional Sliders)</label>
+                  <span className="text-[10px] text-slate-500">Slide 1-5</span>
+                </div>
+
+                <div className="space-y-3 bg-slate-950/40 p-3 rounded-xl border border-slate-900">
+                  {/* Acidity Slider */}
+                  <div className="space-y-1">
+                    <div className="flex justify-between text-xs">
+                      <span className="text-slate-300 font-medium">Acidity (Soft → Tart)</span>
+                      <span className="text-wine-300 font-mono font-bold">{acidity1 ? `${acidity1}/5` : 'Not Set'}</span>
                     </div>
+                    <input
+                      type="range"
+                      min="1"
+                      max="5"
+                      step="1"
+                      value={acidity1 || 3}
+                      onChange={(e) => setAcidity1(parseInt(e.target.value))}
+                      className="w-full h-1.5 bg-slate-900 rounded-lg appearance-none cursor-pointer accent-wine-500"
+                    />
                   </div>
 
-                  <div className="flex items-center justify-between text-xs">
-                    <span className="text-slate-400">Body (Light → Full)</span>
-                    <div className="flex gap-1">
-                      {[1, 2, 3, 4, 5].map(v => (
-                        <button
-                          type="button"
-                          key={v}
-                          onClick={() => setBody1(body1 === v ? undefined : v)}
-                          className={`w-6 h-6 rounded-md text-xs font-bold transition-all ${
-                            body1 === v ? 'bg-wine-600 text-white' : 'bg-slate-950 text-slate-500 hover:text-slate-300'
-                          }`}
-                        >
-                          {v}
-                        </button>
-                      ))}
+                  {/* Body Slider */}
+                  <div className="space-y-1">
+                    <div className="flex justify-between text-xs">
+                      <span className="text-slate-300 font-medium">Body (Light → Full)</span>
+                      <span className="text-wine-300 font-mono font-bold">{body1 ? `${body1}/5` : 'Not Set'}</span>
                     </div>
+                    <input
+                      type="range"
+                      min="1"
+                      max="5"
+                      step="1"
+                      value={body1 || 3}
+                      onChange={(e) => setBody1(parseInt(e.target.value))}
+                      className="w-full h-1.5 bg-slate-900 rounded-lg appearance-none cursor-pointer accent-wine-500"
+                    />
                   </div>
 
-                  <div className="flex items-center justify-between text-xs">
-                    <span className="text-slate-400">Sweetness (Dry → Sweet)</span>
-                    <div className="flex gap-1">
-                      {[1, 2, 3, 4, 5].map(v => (
-                        <button
-                          type="button"
-                          key={v}
-                          onClick={() => setSweetness1(sweetness1 === v ? undefined : v)}
-                          className={`w-6 h-6 rounded-md text-xs font-bold transition-all ${
-                            sweetness1 === v ? 'bg-wine-600 text-white' : 'bg-slate-950 text-slate-500 hover:text-slate-300'
-                          }`}
-                        >
-                          {v}
-                        </button>
-                      ))}
+                  {/* Sweetness Slider */}
+                  <div className="space-y-1">
+                    <div className="flex justify-between text-xs">
+                      <span className="text-slate-300 font-medium">Sweetness (Dry → Sweet)</span>
+                      <span className="text-wine-300 font-mono font-bold">{sweetness1 ? `${sweetness1}/5` : 'Not Set'}</span>
                     </div>
+                    <input
+                      type="range"
+                      min="1"
+                      max="5"
+                      step="1"
+                      value={sweetness1 || 3}
+                      onChange={(e) => setSweetness1(parseInt(e.target.value))}
+                      className="w-full h-1.5 bg-slate-900 rounded-lg appearance-none cursor-pointer accent-wine-500"
+                    />
                   </div>
                 </div>
               </div>
@@ -390,62 +391,63 @@ export default function VotingSlider({
                 </div>
               </div>
 
-              {/* Metric 3: 3-Pillar Sensory DNA */}
-              <div className="w-full space-y-2 pt-2 border-t border-slate-850 text-left">
-                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Sensory DNA (1-5)</label>
-                <div className="space-y-1.5">
-                  <div className="flex items-center justify-between text-xs">
-                    <span className="text-slate-400">Acidity (Soft → Tart)</span>
-                    <div className="flex gap-1">
-                      {[1, 2, 3, 4, 5].map(v => (
-                        <button
-                          type="button"
-                          key={v}
-                          onClick={() => setAcidity2(acidity2 === v ? undefined : v)}
-                          className={`w-6 h-6 rounded-md text-xs font-bold transition-all ${
-                            acidity2 === v ? 'bg-wine-600 text-white' : 'bg-slate-950 text-slate-500 hover:text-slate-300'
-                          }`}
-                        >
-                          {v}
-                        </button>
-                      ))}
+              {/* Metric 3: 3-Pillar Sensory DNA (Smooth Sliders - Optional) */}
+              <div className="w-full space-y-3 pt-3 border-t border-slate-850 text-left">
+                <div className="flex justify-between items-center">
+                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Sensory DNA (Optional Sliders)</label>
+                  <span className="text-[10px] text-slate-500">Slide 1-5</span>
+                </div>
+
+                <div className="space-y-3 bg-slate-950/40 p-3 rounded-xl border border-slate-900">
+                  {/* Acidity Slider */}
+                  <div className="space-y-1">
+                    <div className="flex justify-between text-xs">
+                      <span className="text-slate-300 font-medium">Acidity (Soft → Tart)</span>
+                      <span className="text-wine-300 font-mono font-bold">{acidity2 ? `${acidity2}/5` : 'Not Set'}</span>
                     </div>
+                    <input
+                      type="range"
+                      min="1"
+                      max="5"
+                      step="1"
+                      value={acidity2 || 3}
+                      onChange={(e) => setAcidity2(parseInt(e.target.value))}
+                      className="w-full h-1.5 bg-slate-900 rounded-lg appearance-none cursor-pointer accent-wine-500"
+                    />
                   </div>
 
-                  <div className="flex items-center justify-between text-xs">
-                    <span className="text-slate-400">Body (Light → Full)</span>
-                    <div className="flex gap-1">
-                      {[1, 2, 3, 4, 5].map(v => (
-                        <button
-                          type="button"
-                          key={v}
-                          onClick={() => setBody2(body2 === v ? undefined : v)}
-                          className={`w-6 h-6 rounded-md text-xs font-bold transition-all ${
-                            body2 === v ? 'bg-wine-600 text-white' : 'bg-slate-950 text-slate-500 hover:text-slate-300'
-                          }`}
-                        >
-                          {v}
-                        </button>
-                      ))}
+                  {/* Body Slider */}
+                  <div className="space-y-1">
+                    <div className="flex justify-between text-xs">
+                      <span className="text-slate-300 font-medium">Body (Light → Full)</span>
+                      <span className="text-wine-300 font-mono font-bold">{body2 ? `${body2}/5` : 'Not Set'}</span>
                     </div>
+                    <input
+                      type="range"
+                      min="1"
+                      max="5"
+                      step="1"
+                      value={body2 || 3}
+                      onChange={(e) => setBody2(parseInt(e.target.value))}
+                      className="w-full h-1.5 bg-slate-900 rounded-lg appearance-none cursor-pointer accent-wine-500"
+                    />
                   </div>
 
-                  <div className="flex items-center justify-between text-xs">
-                    <span className="text-slate-400">Sweetness (Dry → Sweet)</span>
-                    <div className="flex gap-1">
-                      {[1, 2, 3, 4, 5].map(v => (
-                        <button
-                          type="button"
-                          key={v}
-                          onClick={() => setSweetness2(sweetness2 === v ? undefined : v)}
-                          className={`w-6 h-6 rounded-md text-xs font-bold transition-all ${
-                            sweetness2 === v ? 'bg-wine-600 text-white' : 'bg-slate-950 text-slate-500 hover:text-slate-300'
-                          }`}
-                        >
-                          {v}
-                        </button>
-                      ))}
+                  {/* Sweetness Slider */}
+                  <div className="space-y-1">
+                    <div className="flex justify-between text-xs">
+                      <span className="text-slate-300 font-medium">Sweetness (Dry → Sweet)</span>
+                      <span className="text-wine-300 font-mono font-bold">{sweetness2 ? `${sweetness2}/5` : 'Not Set'}</span>
                     </div>
+                    <input
+                      type="range"
+                      min="1"
+                      max="5"
+                      step="1"
+                      value={sweetness2 || 3}
+                      onChange={(e) => setSweetness2(parseInt(e.target.value))}
+                      className="w-full h-1.5 bg-slate-900 rounded-lg appearance-none cursor-pointer accent-wine-500"
+                    />
                   </div>
                 </div>
               </div>
@@ -473,14 +475,25 @@ export default function VotingSlider({
         </div>
 
         {/* Central Slider controls */}
-        <div className="glass-panel rounded-2xl p-8 space-y-6">
-          <div className="flex justify-between items-center text-xs font-bold text-slate-400 uppercase tracking-widest">
-            <span className="flex items-center gap-1"><ChevronLeft className="w-4 h-4 text-wine-500" /> Prefer {wine1Label}</span>
-            <span className="flex items-center gap-1"><Scale className="w-4 h-4" /> Equal Tie</span>
-            <span className="flex items-center gap-1">Prefer {wine2Label} <ChevronRight className="w-4 h-4 text-wine-500" /></span>
+        <div className="glass-panel rounded-2xl p-8 space-y-6 border border-wine-800/30">
+          <div className="space-y-1 text-center">
+            <h3 className="text-sm font-bold text-slate-200 uppercase tracking-wider flex items-center justify-center gap-1.5">
+              <Scale className="w-4 h-4 text-wine-400" /> Overall Rating Score (Required)
+            </h3>
+            <div className="flex justify-between text-[11px] font-semibold text-slate-400 px-1 pt-1">
+              <span className="text-rose-400 font-serif">Awful</span>
+              <span className="text-slate-500 font-normal font-mono">0 — 100 Numeric Scale</span>
+              <span className="text-emerald-400 font-serif">Sheer Perfection</span>
+            </div>
           </div>
 
-          <div className="relative pt-4 pb-2">
+          <div className="flex justify-between items-center text-xs font-bold text-slate-400 uppercase tracking-widest pt-2">
+            <span className="flex items-center gap-1"><ChevronLeft className="w-4 h-4 text-wine-500" /> Prefer Wine {wine1Label}</span>
+            <span className="flex items-center gap-1 text-slate-500"><Scale className="w-3.5 h-3.5" /> 50/50</span>
+            <span className="flex items-center gap-1">Prefer Wine {wine2Label} <ChevronRight className="w-4 h-4 text-wine-500" /></span>
+          </div>
+
+          <div className="relative pt-2 pb-2">
             <input
               type="range"
               min="0"
@@ -493,21 +506,34 @@ export default function VotingSlider({
             <div className="absolute top-2.5 left-1/2 -ml-0.5 w-1 h-6 bg-slate-600 pointer-events-none rounded-full" />
           </div>
 
+          {/* Explicit Numeric Scores Under Slider */}
+          <div className="grid grid-cols-2 gap-4 bg-slate-950/60 p-4 rounded-xl border border-slate-900 text-center">
+            <div className="space-y-0.5">
+              <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Wine {wine1Label} Score</p>
+              <p className="text-xl font-bold font-mono text-wine-300">
+                {100 - sliderVal} <span className="text-xs font-sans text-slate-500">/ 100</span>
+              </p>
+            </div>
+            <div className="space-y-0.5 border-l border-slate-800">
+              <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Wine {wine2Label} Score</p>
+              <p className="text-xl font-bold font-mono text-wine-300">
+                {sliderVal} <span className="text-xs font-sans text-slate-500">/ 100</span>
+              </p>
+            </div>
+          </div>
+
           {/* Qualitative interpretation */}
-          <div className="text-center py-2">
+          <div className="text-center py-1">
             <p className={`text-base font-serif transition-colors ${pref.color}`}>
               {pref.text}
-            </p>
-            <p className="text-xs text-slate-500 mt-1 font-mono">
-              Margin: {sliderVal === 50 ? "Even" : `${Math.abs(50 - sliderVal)}% preference`} (Value: {sliderVal})
             </p>
 
             {sliderVal === 50 && (
               <div className="mt-4 max-w-md mx-auto bg-amber-950/20 border border-amber-900/30 rounded-xl p-3 flex items-start gap-2.5 text-xs text-amber-300 text-left animate-pulse">
                 <AlertCircle className="w-4 h-4 shrink-0 text-amber-400 mt-0.5" />
                 <div className="space-y-0.5">
-                  <p className="font-bold">Matchup cannot end in a tie!</p>
-                  <p className="text-slate-400">Please nudge the slider slightly left (Wine {wine1Label}) or right (Wine {wine2Label}) to indicate your preference.</p>
+                  <p className="font-bold">Score required for each wine!</p>
+                  <p className="text-slate-400">Please move the slider to assign your rating scores for Wine {wine1Label} and Wine {wine2Label}.</p>
                 </div>
               </div>
             )}
