@@ -262,6 +262,18 @@ export default function Brackets({
         )}
       </div>
 
+      {/* Decoupled 6-Wine Tasting Sheet Banner */}
+      {(wines.length === 6 || votes.some(v => v.match_id?.startsWith('STANDALONE_'))) && (
+        <div className="glass-panel border border-wine-500/40 bg-wine-950/30 rounded-2xl p-4 max-w-lg mx-auto text-center space-y-2 shadow-lg shadow-wine-950/20">
+          <p className="text-sm font-bold text-wine-200 font-serif flex items-center justify-center gap-1.5">
+            <Trophy className="w-4 h-4 text-amber-400" /> Decoupled 6-Wine Tasting Active
+          </p>
+          <p className="text-xs text-slate-400">
+            You are evaluating 6 wines independently! Head to the <strong className="text-wine-300 font-semibold">Tasting Sheet</strong> tab to log your ratings and notes.
+          </p>
+        </div>
+      )}
+
       {/* Profile Selector Banner for New Guests */}
       {!voterName && (
         <div className="glass-panel border border-amber-500/40 bg-amber-950/20 rounded-2xl p-6 max-w-lg mx-auto text-center space-y-4 shadow-xl shadow-amber-950/20">

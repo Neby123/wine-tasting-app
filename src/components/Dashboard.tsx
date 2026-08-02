@@ -121,10 +121,9 @@ export default function Dashboard({
           valueRatio: score / Math.max(1, w.price) // score per dollar
         };
       })
-    : ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'].map(label => {
+    : (wines.length > 0 ? wines.map((w, idx) => w.blind_label || String.fromCharCode(65 + idx)) : ['A', 'B', 'C', 'D', 'E', 'F']).map(label => {
         const score = getWineAppreciationIndex(label);
         
-        // Count head-to-head battle victories across all votes cast by tasters
         let wins = 0;
         votes.forEach(v => {
           if (v.wine_1_label === label && v.slider_value < 50) wins++;
@@ -163,40 +162,8 @@ export default function Dashboard({
   const getAwards = () => {
     if (wines.length === 0) return null;
 
-    // Calculate crowd consensus match winners from all votes cast
-    const getMatchWinner = (w1?: string, w2?: string): string | undefined => {
-      if (!w1 || !w2) return w1 || w2;
-      const matchVotes = votes.filter(v => 
-        (v.wine_1_label === w1 && v.wine_2_label === w2) ||
-        (v.wine_1_label === w2 && v.wine_2_label === w1)
-      );
-      if (matchVotes.length === 0) return w1;
-      let w1ScoreSum = 0;
-      matchVotes.forEach(v => {
-        w1ScoreSum += (v.wine_1_label === w1) ? (100 - v.slider_value) : v.slider_value;
-      });
-      const avgW1 = w1ScoreSum / matchVotes.length;
-      return avgW1 >= 50 ? w1 : w2;
-    };
-
-    const cQ1 = getMatchWinner('A', 'B') || 'A';
-    const cQ2 = getMatchWinner('C', 'D') || 'C';
-    const cQ3 = getMatchWinner('E', 'F') || 'E';
-    const cQ4 = getMatchWinner('G', 'H') || 'G';
-    const cS1 = getMatchWinner(cQ1, cQ2) || cQ1;
-    const cS2 = getMatchWinner(cQ3, cQ4) || cQ3;
-    const cF  = getMatchWinner(cS1, cS2) || cS1;
-
-    const computedMatchWinners = { Q1: cQ1, Q2: cQ2, Q3: cQ3, Q4: cQ4, S1: cS1, S2: cS2, F: cF };
-    const effectiveMatchWinners = { ...computedMatchWinners, ...matchWinners };
-
-    // 1. Best in Show (Final bracket winner)
-    const bisLabel = effectiveMatchWinners['F'];
-    const sortedByRank = [...wineStats].sort((a, b) => {
-      if (b.wins !== a.wins) return b.wins - a.wins;
-      return b.score - a.score;
-    });
-    const bestInShow = wineStats.find(w => w.blind_label === bisLabel) || sortedByRank[0];
+    // 1. Best in Show (Grand Champion: Highest scoring wine)
+    const bestInShow = leaderboard[0];
 
     // 2. People's Choice (Highest average rating)
     const peoplesChoice = [...wineStats].sort((a, b) => b.score - a.score)[0];

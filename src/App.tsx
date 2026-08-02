@@ -275,11 +275,11 @@ export default function App() {
     
     setLoading(true);
     try {
-      // Shift status to tasting (labels A-H are physically on bags, no DB labels yet)
+      // Shift status to tasting (labels A-F are physically on bags, no DB labels yet)
       const updatedSession = await db.updateSessionStatus(activeSession.id, 'tasting');
       setActiveSession(updatedSession);
       await loadData();
-      setCurrentTab('brackets');
+      setCurrentTab('tasting');
     } catch (err) {
       console.error(err);
       alert("Failed to start tasting session: " + (err as Error).message);

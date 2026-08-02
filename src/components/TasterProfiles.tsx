@@ -126,11 +126,18 @@ export default function TasterProfiles({ voterName }: TasterProfilesProps) {
           }
 
           // preference value toward each side (for signature wines)
-          for (const label of [v.wine_1_label, v.wine_2_label]) {
-            const val = label === v.wine_1_label ? (100 - v.slider_value) : v.slider_value;
+          if (v.match_id?.startsWith('STANDALONE_') || v.wine_1_label === v.wine_2_label) {
+            const label = v.wine_1_label;
             if (!prefByLabel[label]) prefByLabel[label] = { sum: 0, n: 0 };
-            prefByLabel[label].sum += val;
+            prefByLabel[label].sum += v.slider_value;
             prefByLabel[label].n += 1;
+          } else {
+            for (const label of [v.wine_1_label, v.wine_2_label]) {
+              const val = label === v.wine_1_label ? v.slider_value : (100 - v.slider_value);
+              if (!prefByLabel[label]) prefByLabel[label] = { sum: 0, n: 0 };
+              prefByLabel[label].sum += val;
+              prefByLabel[label].n += 1;
+            }
           }
         }
 
@@ -216,13 +223,20 @@ export default function TasterProfiles({ voterName }: TasterProfilesProps) {
         const mine = (s.votes || []).filter(v => v.voter_name === selected);
         const theirs = (s.votes || []).filter(v => v.voter_name === other);
         for (const a of mine) {
-          const b = theirs.find(t => t.match_id === a.match_id);
+          const b = theirs.find(t => t.match_id === a.match_id || (a.wine_1_label && t.wine_1_label === a.wine_1_label));
           if (!b) continue;
-          const pa = preferredLabel(a);
-          const pb = preferredLabel(b);
-          if (pa === null || pb === null) continue;
-          shared++;
-          if (pa === pb) same++;
+
+          if (a.match_id?.startsWith('STANDALONE_') || a.wine_1_label === a.wine_2_label) {
+            const diff = Math.abs(a.slider_value - b.slider_value);
+            shared++;
+            if (diff <= 20) same++;
+          } else {
+            const pa = preferredLabel(a);
+            const pb = preferredLabel(b);
+            if (pa === null || pb === null) continue;
+            shared++;
+            if (pa === pb) same++;
+          }
         }
       }
       if (shared > 0) out.push({ other, share: same / shared, shared });
