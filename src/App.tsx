@@ -476,7 +476,23 @@ export default function App() {
     setCurrentMatch({ id: matchId, wine1, wine2 });
   };
 
-  const handleSubmitVote = async (sliderValue: number, notes1: string, notes2: string) => {
+  const handleSubmitVote = async (
+    sliderValue: number,
+    notes1: string,
+    notes2: string,
+    extraMetrics?: {
+      perceived_price_1?: 'cheap' | 'mid' | 'expensive';
+      perceived_price_2?: 'cheap' | 'mid' | 'expensive';
+      buy_again_1?: 'yes' | 'maybe' | 'no';
+      buy_again_2?: 'yes' | 'maybe' | 'no';
+      acidity_1?: number;
+      acidity_2?: number;
+      body_1?: number;
+      body_2?: number;
+      sweetness_1?: number;
+      sweetness_2?: number;
+    }
+  ) => {
     if (!activeSession || !currentMatch) return;
 
     try {
@@ -488,7 +504,8 @@ export default function App() {
         wine_2_label: currentMatch.wine2,
         slider_value: sliderValue,
         notes_wine_1: notes1 || undefined,
-        notes_wine_2: notes2 || undefined
+        notes_wine_2: notes2 || undefined,
+        ...extraMetrics
       });
 
       await loadData();

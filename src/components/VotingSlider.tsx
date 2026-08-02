@@ -8,7 +8,23 @@ interface VotingSliderProps {
   wine2Label: string;
   voterName: string;
   existingVote?: Vote;
-  onSubmitVote: (sliderValue: number, notes1: string, notes2: string) => Promise<void>;
+  onSubmitVote: (
+    sliderValue: number,
+    notes1: string,
+    notes2: string,
+    extraMetrics?: {
+      perceived_price_1?: 'cheap' | 'mid' | 'expensive';
+      perceived_price_2?: 'cheap' | 'mid' | 'expensive';
+      buy_again_1?: 'yes' | 'maybe' | 'no';
+      buy_again_2?: 'yes' | 'maybe' | 'no';
+      acidity_1?: number;
+      acidity_2?: number;
+      body_1?: number;
+      body_2?: number;
+      sweetness_1?: number;
+      sweetness_2?: number;
+    }
+  ) => Promise<void>;
   onBackToBracket: () => void;
 }
 
@@ -24,6 +40,19 @@ export default function VotingSlider({
   const [sliderVal, setSliderVal] = useState(50);
   const [notes1, setNotes1] = useState('');
   const [notes2, setNotes2] = useState('');
+
+  // Metrics 1-3
+  const [perceivedPrice1, setPerceivedPrice1] = useState<'cheap' | 'mid' | 'expensive' | undefined>(undefined);
+  const [perceivedPrice2, setPerceivedPrice2] = useState<'cheap' | 'mid' | 'expensive' | undefined>(undefined);
+  const [buyAgain1, setBuyAgain1] = useState<'yes' | 'maybe' | 'no' | undefined>(undefined);
+  const [buyAgain2, setBuyAgain2] = useState<'yes' | 'maybe' | 'no' | undefined>(undefined);
+  const [acidity1, setAcidity1] = useState<number | undefined>(undefined);
+  const [acidity2, setAcidity2] = useState<number | undefined>(undefined);
+  const [body1, setBody1] = useState<number | undefined>(undefined);
+  const [body2, setBody2] = useState<number | undefined>(undefined);
+  const [sweetness1, setSweetness1] = useState<number | undefined>(undefined);
+  const [sweetness2, setSweetness2] = useState<number | undefined>(undefined);
+
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [success, setSuccess] = useState(false);
 
@@ -33,10 +62,24 @@ export default function VotingSlider({
       setSliderVal(existingVote.slider_value);
       setNotes1(existingVote.notes_wine_1 || '');
       setNotes2(existingVote.notes_wine_2 || '');
+      setPerceivedPrice1(existingVote.perceived_price_1);
+      setPerceivedPrice2(existingVote.perceived_price_2);
+      setBuyAgain1(existingVote.buy_again_1);
+      setBuyAgain2(existingVote.buy_again_2);
+      setAcidity1(existingVote.acidity_1);
+      setAcidity2(existingVote.acidity_2);
+      setBody1(existingVote.body_1);
+      setBody2(existingVote.body_2);
+      setSweetness1(existingVote.sweetness_1);
+      setSweetness2(existingVote.sweetness_2);
     } else {
       setSliderVal(50);
-      setNotes1('');
-      setNotes2('');
+      setNotes1(''); setNotes2('');
+      setPerceivedPrice1(undefined); setPerceivedPrice2(undefined);
+      setBuyAgain1(undefined); setBuyAgain2(undefined);
+      setAcidity1(undefined); setAcidity2(undefined);
+      setBody1(undefined); setBody2(undefined);
+      setSweetness1(undefined); setSweetness2(undefined);
     }
     setSuccess(false);
   }, [existingVote, matchId]);
@@ -45,11 +88,22 @@ export default function VotingSlider({
     e.preventDefault();
     setIsSubmitting(true);
     try {
-      await onSubmitVote(sliderVal, notes1, notes2);
+      await onSubmitVote(sliderVal, notes1, notes2, {
+        perceived_price_1: perceivedPrice1,
+        perceived_price_2: perceivedPrice2,
+        buy_again_1: buyAgain1,
+        buy_again_2: buyAgain2,
+        acidity_1: acidity1,
+        acidity_2: acidity2,
+        body_1: body1,
+        body_2: body2,
+        sweetness_1: sweetness1,
+        sweetness_2: sweetness2
+      });
       setSuccess(true);
       setTimeout(() => {
         onBackToBracket();
-      }, 1200); // Wait briefly to show success state before returning
+      }, 1200);
     } catch (err) {
       console.error("Failed to submit vote:", err);
       alert("Failed to submit vote. Please try again: " + (err as Error).message);
@@ -125,13 +179,127 @@ export default function VotingSlider({
               </div>
               <h3 className="text-xl font-bold text-slate-200 font-serif">Wine {wine1Label}</h3>
               
+              {/* Metric 1: Perceived Price Category */}
               <div className="w-full space-y-1 text-left">
+                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Perceived Price Category</label>
+                <div className="grid grid-cols-3 gap-1.5">
+                  {[
+                    { id: 'cheap', label: 'Cheap ($)' },
+                    { id: 'mid', label: 'Mid ($$)' },
+                    { id: 'expensive', label: 'Pricey ($$$)' }
+                  ].map(tier => (
+                    <button
+                      type="button"
+                      key={tier.id}
+                      onClick={() => setPerceivedPrice1(perceivedPrice1 === tier.id ? undefined : tier.id as any)}
+                      className={`py-1.5 px-2 rounded-lg text-xs font-semibold border transition-all ${
+                        perceivedPrice1 === tier.id
+                          ? 'bg-amber-500/20 border-amber-400 text-amber-200'
+                          : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-slate-200'
+                      }`}
+                    >
+                      {tier.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Metric 2: Buy-Again Intent */}
+              <div className="w-full space-y-1 text-left">
+                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Buy Again Intent</label>
+                <div className="grid grid-cols-3 gap-1.5">
+                  {[
+                    { id: 'yes', label: '🍷 Yes!' },
+                    { id: 'maybe', label: '🤔 Maybe' },
+                    { id: 'no', label: '❌ Pass' }
+                  ].map(intent => (
+                    <button
+                      type="button"
+                      key={intent.id}
+                      onClick={() => setBuyAgain1(buyAgain1 === intent.id ? undefined : intent.id as any)}
+                      className={`py-1.5 px-2 rounded-lg text-xs font-semibold border transition-all ${
+                        buyAgain1 === intent.id
+                          ? intent.id === 'yes'
+                            ? 'bg-emerald-500/20 border-emerald-400 text-emerald-200'
+                            : intent.id === 'maybe'
+                            ? 'bg-amber-500/20 border-amber-400 text-amber-200'
+                            : 'bg-rose-500/20 border-rose-400 text-rose-200'
+                          : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-slate-200'
+                      }`}
+                    >
+                      {intent.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Metric 3: 3-Pillar Sensory DNA */}
+              <div className="w-full space-y-2 pt-2 border-t border-slate-850 text-left">
+                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Sensory DNA (1-5)</label>
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="text-slate-400">Acidity (Soft → Tart)</span>
+                    <div className="flex gap-1">
+                      {[1, 2, 3, 4, 5].map(v => (
+                        <button
+                          type="button"
+                          key={v}
+                          onClick={() => setAcidity1(acidity1 === v ? undefined : v)}
+                          className={`w-6 h-6 rounded-md text-xs font-bold transition-all ${
+                            acidity1 === v ? 'bg-wine-600 text-white' : 'bg-slate-950 text-slate-500 hover:text-slate-300'
+                          }`}
+                        >
+                          {v}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="text-slate-400">Body (Light → Full)</span>
+                    <div className="flex gap-1">
+                      {[1, 2, 3, 4, 5].map(v => (
+                        <button
+                          type="button"
+                          key={v}
+                          onClick={() => setBody1(body1 === v ? undefined : v)}
+                          className={`w-6 h-6 rounded-md text-xs font-bold transition-all ${
+                            body1 === v ? 'bg-wine-600 text-white' : 'bg-slate-950 text-slate-500 hover:text-slate-300'
+                          }`}
+                        >
+                          {v}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="text-slate-400">Sweetness (Dry → Sweet)</span>
+                    <div className="flex gap-1">
+                      {[1, 2, 3, 4, 5].map(v => (
+                        <button
+                          type="button"
+                          key={v}
+                          onClick={() => setSweetness1(sweetness1 === v ? undefined : v)}
+                          className={`w-6 h-6 rounded-md text-xs font-bold transition-all ${
+                            sweetness1 === v ? 'bg-wine-600 text-white' : 'bg-slate-950 text-slate-500 hover:text-slate-300'
+                          }`}
+                        >
+                          {v}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="w-full space-y-1 text-left pt-2 border-t border-slate-850">
                 <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider flex items-center gap-1.5">
                   <Edit3 className="w-3.5 h-3.5" /> Tasting Notes
                 </label>
                 <textarea
-                  rows={4}
-                  placeholder="Aroma, flavor, body, tanins, finish..."
+                  rows={2}
+                  placeholder="Aroma, flavor, body, finish..."
                   value={notes1}
                   onChange={(e) => setNotes1(e.target.value)}
                   className="w-full px-3 py-2 bg-slate-950/60 border border-slate-800 focus:border-wine-500 rounded-lg text-slate-200 text-sm focus:outline-none focus:ring-1 focus:ring-wine-500 resize-none"
@@ -167,14 +335,128 @@ export default function VotingSlider({
                 {wine2Label}
               </div>
               <h3 className="text-xl font-bold text-slate-200 font-serif">Wine {wine2Label}</h3>
-              
+
+              {/* Metric 1: Perceived Price Category */}
               <div className="w-full space-y-1 text-left">
+                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Perceived Price Category</label>
+                <div className="grid grid-cols-3 gap-1.5">
+                  {[
+                    { id: 'cheap', label: 'Cheap ($)' },
+                    { id: 'mid', label: 'Mid ($$)' },
+                    { id: 'expensive', label: 'Pricey ($$$)' }
+                  ].map(tier => (
+                    <button
+                      type="button"
+                      key={tier.id}
+                      onClick={() => setPerceivedPrice2(perceivedPrice2 === tier.id ? undefined : tier.id as any)}
+                      className={`py-1.5 px-2 rounded-lg text-xs font-semibold border transition-all ${
+                        perceivedPrice2 === tier.id
+                          ? 'bg-amber-500/20 border-amber-400 text-amber-200'
+                          : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-slate-200'
+                      }`}
+                    >
+                      {tier.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Metric 2: Buy-Again Intent */}
+              <div className="w-full space-y-1 text-left">
+                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Buy Again Intent</label>
+                <div className="grid grid-cols-3 gap-1.5">
+                  {[
+                    { id: 'yes', label: '🍷 Yes!' },
+                    { id: 'maybe', label: '🤔 Maybe' },
+                    { id: 'no', label: '❌ Pass' }
+                  ].map(intent => (
+                    <button
+                      type="button"
+                      key={intent.id}
+                      onClick={() => setBuyAgain2(buyAgain2 === intent.id ? undefined : intent.id as any)}
+                      className={`py-1.5 px-2 rounded-lg text-xs font-semibold border transition-all ${
+                        buyAgain2 === intent.id
+                          ? intent.id === 'yes'
+                            ? 'bg-emerald-500/20 border-emerald-400 text-emerald-200'
+                            : intent.id === 'maybe'
+                            ? 'bg-amber-500/20 border-amber-400 text-amber-200'
+                            : 'bg-rose-500/20 border-rose-400 text-rose-200'
+                          : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-slate-200'
+                      }`}
+                    >
+                      {intent.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Metric 3: 3-Pillar Sensory DNA */}
+              <div className="w-full space-y-2 pt-2 border-t border-slate-850 text-left">
+                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Sensory DNA (1-5)</label>
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="text-slate-400">Acidity (Soft → Tart)</span>
+                    <div className="flex gap-1">
+                      {[1, 2, 3, 4, 5].map(v => (
+                        <button
+                          type="button"
+                          key={v}
+                          onClick={() => setAcidity2(acidity2 === v ? undefined : v)}
+                          className={`w-6 h-6 rounded-md text-xs font-bold transition-all ${
+                            acidity2 === v ? 'bg-wine-600 text-white' : 'bg-slate-950 text-slate-500 hover:text-slate-300'
+                          }`}
+                        >
+                          {v}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="text-slate-400">Body (Light → Full)</span>
+                    <div className="flex gap-1">
+                      {[1, 2, 3, 4, 5].map(v => (
+                        <button
+                          type="button"
+                          key={v}
+                          onClick={() => setBody2(body2 === v ? undefined : v)}
+                          className={`w-6 h-6 rounded-md text-xs font-bold transition-all ${
+                            body2 === v ? 'bg-wine-600 text-white' : 'bg-slate-950 text-slate-500 hover:text-slate-300'
+                          }`}
+                        >
+                          {v}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="text-slate-400">Sweetness (Dry → Sweet)</span>
+                    <div className="flex gap-1">
+                      {[1, 2, 3, 4, 5].map(v => (
+                        <button
+                          type="button"
+                          key={v}
+                          onClick={() => setSweetness2(sweetness2 === v ? undefined : v)}
+                          className={`w-6 h-6 rounded-md text-xs font-bold transition-all ${
+                            sweetness2 === v ? 'bg-wine-600 text-white' : 'bg-slate-950 text-slate-500 hover:text-slate-300'
+                          }`}
+                        >
+                          {v}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="w-full space-y-1 text-left pt-2 border-t border-slate-850">
                 <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider flex items-center gap-1.5">
                   <Edit3 className="w-3.5 h-3.5" /> Tasting Notes
                 </label>
                 <textarea
-                  rows={4}
-                  placeholder="Aroma, flavor, body, tanins, finish..."
+                  rows={2}
+                  placeholder="Aroma, flavor, body, finish..."
                   value={notes2}
                   onChange={(e) => setNotes2(e.target.value)}
                   className="w-full px-3 py-2 bg-slate-950/60 border border-slate-800 focus:border-wine-500 rounded-lg text-slate-200 text-sm focus:outline-none focus:ring-1 focus:ring-wine-500 resize-none"

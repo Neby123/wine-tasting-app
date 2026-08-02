@@ -62,6 +62,17 @@ export interface Vote {
   slider_value: number; // 0 to 100 (0 = 100% Wine 1, 100 = 100% Wine 2)
   notes_wine_1?: string;
   notes_wine_2?: string;
+  // High-Yield Sensory & Value Metrics (1-3)
+  perceived_price_1?: 'cheap' | 'mid' | 'expensive';
+  perceived_price_2?: 'cheap' | 'mid' | 'expensive';
+  buy_again_1?: 'yes' | 'maybe' | 'no';
+  buy_again_2?: 'yes' | 'maybe' | 'no';
+  acidity_1?: number; // 1-5 (Soft -> Tart)
+  acidity_2?: number;
+  body_1?: number;    // 1-5 (Light -> Full)
+  body_2?: number;
+  sweetness_1?: number; // 1-5 (Bone Dry -> Sweet)
+  sweetness_2?: number;
 }
 
 export interface HistoricalTasting {
