@@ -4,18 +4,15 @@ import { WineSession, Wine, Vote, HistoricalTasting } from './utils/mockData';
 import IntakeForm from './components/IntakeForm';
 import Brackets from './components/Brackets';
 import VotingSlider from './components/VotingSlider';
+import TastingSheet from './components/TastingSheet';
 import Dashboard from './components/Dashboard';
 import History from './components/History';
 import Settings from './components/Settings';
 import TasterProfiles from './components/TasterProfiles';
 import Cellar from './components/Cellar';
-import { Wine as WineIcon, Trophy, Layers, ClipboardList, History as HistoryIcon, Settings as SettingsIcon, PlusCircle, AlertCircle, RefreshCw, Users, Star } from 'lucide-react';
+import { Wine as WineIcon, Trophy, Layers, ClipboardList, History as HistoryIcon, Settings as SettingsIcon, PlusCircle, AlertCircle, RefreshCw, Users, Star, FileText } from 'lucide-react';
 
-// The tab you're viewing is kept in the URL hash (e.g. #history) so a page
-// reload — which mobile browsers trigger on their own when they discard a
-// backgrounded tab — puts you back where you were instead of dumping you on the
-// start screen. It also makes each view deep-linkable and back-button friendly.
-const TAB_VALUES = ['dashboard', 'brackets', 'intake', 'history', 'settings', 'palate', 'cellar'] as const;
+const TAB_VALUES = ['dashboard', 'tasting', 'brackets', 'intake', 'history', 'settings', 'palate', 'cellar'] as const;
 type TabValue = typeof TAB_VALUES[number];
 
 const getTabFromHash = (): TabValue => {
@@ -515,6 +512,43 @@ export default function App() {
     }
   };
 
+  const handleSubmitStandaloneRating = async (
+    wineLabel: string,
+    score: number,
+    notes?: string,
+    extraMetrics?: {
+      perceivedPrice?: 'cheap' | 'mid' | 'expensive';
+      buyAgain?: 'yes' | 'maybe' | 'no';
+      acidity?: number;
+      body?: number;
+      sweetness?: number;
+    }
+  ) => {
+    if (!activeSession) return;
+
+    try {
+      await db.submitVote({
+        session_id: activeSession.id,
+        voter_name: voterName,
+        match_id: `STANDALONE_${wineLabel}`,
+        wine_1_label: wineLabel,
+        wine_2_label: wineLabel,
+        slider_value: score,
+        notes_wine_1: notes || undefined,
+        perceived_price_1: extraMetrics?.perceivedPrice,
+        buy_again_1: extraMetrics?.buyAgain,
+        acidity_1: extraMetrics?.acidity,
+        body_1: extraMetrics?.body,
+        sweetness_1: extraMetrics?.sweetness
+      });
+
+      await loadData();
+    } catch (err) {
+      console.error('Failed to submit standalone rating:', err);
+      throw err;
+    }
+  };
+
   // Check existing vote
   const getExistingVote = () => {
     if (!currentMatch) return undefined;
@@ -573,6 +607,18 @@ export default function App() {
                 }`}
               >
                 <ClipboardList className="w-4 h-4" /> Register ({wines.length})
+              </button>
+
+              <button
+                onClick={() => { setCurrentMatch(null); setCurrentTab('tasting'); }}
+                disabled={activeSession.status === 'setup'}
+                className={`px-4 py-2 rounded-lg transition-colors flex items-center gap-1.5 ${
+                  currentTab === 'tasting' && !currentMatch
+                    ? 'bg-wine-850 text-wine-200 font-bold shadow-md shadow-wine-950/20' 
+                    : 'text-slate-400 hover:text-slate-200 disabled:opacity-30 disabled:pointer-events-none'
+                }`}
+              >
+                <FileText className="w-4 h-4 text-wine-400" /> Tasting Sheet
               </button>
 
               <button
@@ -756,6 +802,15 @@ export default function App() {
                 onAddWine={handleAddWine}
                 onDeleteWine={handleDeleteWine}
                 onStartTasting={handleStartTasting}
+              />
+            )}
+
+            {currentTab === 'tasting' && (
+              <TastingSheet
+                wines={wines}
+                voterName={voterName}
+                votes={votes}
+                onSubmitStandaloneRating={handleSubmitStandaloneRating}
               />
             )}
 
