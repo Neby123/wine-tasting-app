@@ -287,9 +287,7 @@ export default function Dashboard({
             <span>•</span>
             <span>Price: <strong className="text-emerald-400 font-bold">${awards.bestInShow.price}</strong></span>
             <span>•</span>
-            <span>Appreciation Score: <strong className="text-wine-300 font-bold">{awards.bestInShow.score}/100</strong></span>
-            <span>•</span>
-            <span>Head-to-Head Victories: <strong className="text-gold-400 font-bold">{awards.bestInShow.wins} Wins</strong></span>
+            <span>Appreciation Score: <strong className="text-wine-300 font-bold">{awards.bestInShow.score} / 100</strong></span>
           </div>
         </div>
       )}

@@ -284,7 +284,7 @@ export default function History({ voterName, onRefresh }: HistoryProps) {
                         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                           <div className="space-y-0.5">
                             <h4 className="text-sm font-bold text-wine-200 font-serif">Historical Tasting Journal</h4>
-                            <p className="text-xs text-slate-500">Review individual brackets, ratings, and notes logged during this session.</p>
+                            <p className="text-xs text-slate-500">Review individual ratings, notes, and price-performance metrics logged during this session.</p>
                           </div>
                           
                           {uniqueVoters.length > 0 && (

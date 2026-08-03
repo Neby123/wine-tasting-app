@@ -310,7 +310,7 @@ export default function TasterProfiles({ voterName }: TasterProfilesProps) {
                 <div className="glass-panel rounded-2xl p-4 space-y-1">
                   <p className="text-[10px] uppercase tracking-widest text-slate-500 font-bold">Events</p>
                   <p className="text-2xl font-black font-serif text-slate-100">{profile.events}</p>
-                  <p className="text-[11px] text-slate-500">{profile.decisions} head-to-heads judged</p>
+                  <p className="text-[11px] text-slate-500">{profile.signatureWines.length} wines rated</p>
                 </div>
 
                 <div className="glass-panel rounded-2xl p-4 space-y-1">
