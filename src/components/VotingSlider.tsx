@@ -240,56 +240,104 @@ export default function VotingSlider({
                   <span className="text-[10px] text-slate-500">Slide 1-5</span>
                 </div>
 
-                <div className="space-y-3 bg-slate-950/40 p-3 rounded-xl border border-slate-900">
-                  {/* Acidity Slider */}
-                  <div className="space-y-1">
-                    <div className="flex justify-between text-xs">
-                      <span className="text-slate-300 font-medium">Acidity (Soft → Tart)</span>
-                      <span className="text-wine-300 font-mono font-bold">{acidity1 ? `${acidity1}/5` : 'Not Set'}</span>
+                <div className="space-y-4 bg-slate-950/40 p-3.5 rounded-xl border border-slate-900">
+                  {/* Acidity 1-5 Buttons */}
+                  <div className="space-y-1.5">
+                    <div className="flex justify-between items-center text-xs">
+                      <span className="text-slate-300 font-medium">Acidity</span>
+                      <span className="text-amber-400 font-mono font-bold">
+                        {acidity1 ? `${acidity1} / 5` : <span className="text-slate-500 font-normal italic">Optional</span>}
+                      </span>
                     </div>
-                    <input
-                      type="range"
-                      min="1"
-                      max="5"
-                      step="1"
-                      value={acidity1 || 3}
-                      onChange={(e) => setAcidity1(parseInt(e.target.value))}
-                      className="w-full h-1.5 bg-slate-900 rounded-lg appearance-none cursor-pointer accent-wine-500"
-                    />
+                    <div className="grid grid-cols-5 gap-1.5">
+                      {[1, 2, 3, 4, 5].map((num) => {
+                        const isSelected = acidity1 === num;
+                        return (
+                          <button
+                            key={num}
+                            type="button"
+                            onClick={() => setAcidity1(isSelected ? undefined : num)}
+                            className={`py-1.5 text-xs font-bold rounded-lg border transition-all ${
+                              isSelected
+                                ? 'bg-amber-500/25 border-amber-400 text-amber-200 shadow-md shadow-amber-950/20 scale-[1.02]'
+                                : 'bg-slate-950/80 border-slate-800 text-slate-400 hover:text-slate-200 hover:border-slate-700'
+                            }`}
+                          >
+                            {num}
+                          </button>
+                        );
+                      })}
+                    </div>
+                    <div className="flex justify-between text-[10px] text-slate-500 font-medium px-0.5">
+                      <span>1 (Soft)</span>
+                      <span>5 (Tart)</span>
+                    </div>
                   </div>
 
-                  {/* Body Slider */}
-                  <div className="space-y-1">
-                    <div className="flex justify-between text-xs">
-                      <span className="text-slate-300 font-medium">Body (Light → Full)</span>
-                      <span className="text-wine-300 font-mono font-bold">{body1 ? `${body1}/5` : 'Not Set'}</span>
+                  {/* Body 1-5 Buttons */}
+                  <div className="space-y-1.5">
+                    <div className="flex justify-between items-center text-xs">
+                      <span className="text-slate-300 font-medium">Body</span>
+                      <span className="text-amber-400 font-mono font-bold">
+                        {body1 ? `${body1} / 5` : <span className="text-slate-500 font-normal italic">Optional</span>}
+                      </span>
                     </div>
-                    <input
-                      type="range"
-                      min="1"
-                      max="5"
-                      step="1"
-                      value={body1 || 3}
-                      onChange={(e) => setBody1(parseInt(e.target.value))}
-                      className="w-full h-1.5 bg-slate-900 rounded-lg appearance-none cursor-pointer accent-wine-500"
-                    />
+                    <div className="grid grid-cols-5 gap-1.5">
+                      {[1, 2, 3, 4, 5].map((num) => {
+                        const isSelected = body1 === num;
+                        return (
+                          <button
+                            key={num}
+                            type="button"
+                            onClick={() => setBody1(isSelected ? undefined : num)}
+                            className={`py-1.5 text-xs font-bold rounded-lg border transition-all ${
+                              isSelected
+                                ? 'bg-amber-500/25 border-amber-400 text-amber-200 shadow-md shadow-amber-950/20 scale-[1.02]'
+                                : 'bg-slate-950/80 border-slate-800 text-slate-400 hover:text-slate-200 hover:border-slate-700'
+                            }`}
+                          >
+                            {num}
+                          </button>
+                        );
+                      })}
+                    </div>
+                    <div className="flex justify-between text-[10px] text-slate-500 font-medium px-0.5">
+                      <span>1 (Light)</span>
+                      <span>5 (Full)</span>
+                    </div>
                   </div>
 
-                  {/* Sweetness Slider */}
-                  <div className="space-y-1">
-                    <div className="flex justify-between text-xs">
-                      <span className="text-slate-300 font-medium">Sweetness (Dry → Sweet)</span>
-                      <span className="text-wine-300 font-mono font-bold">{sweetness1 ? `${sweetness1}/5` : 'Not Set'}</span>
+                  {/* Sweetness 1-5 Buttons */}
+                  <div className="space-y-1.5">
+                    <div className="flex justify-between items-center text-xs">
+                      <span className="text-slate-300 font-medium">Sweetness</span>
+                      <span className="text-amber-400 font-mono font-bold">
+                        {sweetness1 ? `${sweetness1} / 5` : <span className="text-slate-500 font-normal italic">Optional</span>}
+                      </span>
                     </div>
-                    <input
-                      type="range"
-                      min="1"
-                      max="5"
-                      step="1"
-                      value={sweetness1 || 3}
-                      onChange={(e) => setSweetness1(parseInt(e.target.value))}
-                      className="w-full h-1.5 bg-slate-900 rounded-lg appearance-none cursor-pointer accent-wine-500"
-                    />
+                    <div className="grid grid-cols-5 gap-1.5">
+                      {[1, 2, 3, 4, 5].map((num) => {
+                        const isSelected = sweetness1 === num;
+                        return (
+                          <button
+                            key={num}
+                            type="button"
+                            onClick={() => setSweetness1(isSelected ? undefined : num)}
+                            className={`py-1.5 text-xs font-bold rounded-lg border transition-all ${
+                              isSelected
+                                ? 'bg-amber-500/25 border-amber-400 text-amber-200 shadow-md shadow-amber-950/20 scale-[1.02]'
+                                : 'bg-slate-950/80 border-slate-800 text-slate-400 hover:text-slate-200 hover:border-slate-700'
+                            }`}
+                          >
+                            {num}
+                          </button>
+                        );
+                      })}
+                    </div>
+                    <div className="flex justify-between text-[10px] text-slate-500 font-medium px-0.5">
+                      <span>1 (Bone Dry)</span>
+                      <span>5 (Sweet)</span>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -398,56 +446,104 @@ export default function VotingSlider({
                   <span className="text-[10px] text-slate-500">Slide 1-5</span>
                 </div>
 
-                <div className="space-y-3 bg-slate-950/40 p-3 rounded-xl border border-slate-900">
-                  {/* Acidity Slider */}
-                  <div className="space-y-1">
-                    <div className="flex justify-between text-xs">
-                      <span className="text-slate-300 font-medium">Acidity (Soft → Tart)</span>
-                      <span className="text-wine-300 font-mono font-bold">{acidity2 ? `${acidity2}/5` : 'Not Set'}</span>
+                <div className="space-y-4 bg-slate-950/40 p-3.5 rounded-xl border border-slate-900">
+                  {/* Acidity 1-5 Buttons */}
+                  <div className="space-y-1.5">
+                    <div className="flex justify-between items-center text-xs">
+                      <span className="text-slate-300 font-medium">Acidity</span>
+                      <span className="text-amber-400 font-mono font-bold">
+                        {acidity2 ? `${acidity2} / 5` : <span className="text-slate-500 font-normal italic">Optional</span>}
+                      </span>
                     </div>
-                    <input
-                      type="range"
-                      min="1"
-                      max="5"
-                      step="1"
-                      value={acidity2 || 3}
-                      onChange={(e) => setAcidity2(parseInt(e.target.value))}
-                      className="w-full h-1.5 bg-slate-900 rounded-lg appearance-none cursor-pointer accent-wine-500"
-                    />
+                    <div className="grid grid-cols-5 gap-1.5">
+                      {[1, 2, 3, 4, 5].map((num) => {
+                        const isSelected = acidity2 === num;
+                        return (
+                          <button
+                            key={num}
+                            type="button"
+                            onClick={() => setAcidity2(isSelected ? undefined : num)}
+                            className={`py-1.5 text-xs font-bold rounded-lg border transition-all ${
+                              isSelected
+                                ? 'bg-amber-500/25 border-amber-400 text-amber-200 shadow-md shadow-amber-950/20 scale-[1.02]'
+                                : 'bg-slate-950/80 border-slate-800 text-slate-400 hover:text-slate-200 hover:border-slate-700'
+                            }`}
+                          >
+                            {num}
+                          </button>
+                        );
+                      })}
+                    </div>
+                    <div className="flex justify-between text-[10px] text-slate-500 font-medium px-0.5">
+                      <span>1 (Soft)</span>
+                      <span>5 (Tart)</span>
+                    </div>
                   </div>
 
-                  {/* Body Slider */}
-                  <div className="space-y-1">
-                    <div className="flex justify-between text-xs">
-                      <span className="text-slate-300 font-medium">Body (Light → Full)</span>
-                      <span className="text-wine-300 font-mono font-bold">{body2 ? `${body2}/5` : 'Not Set'}</span>
+                  {/* Body 1-5 Buttons */}
+                  <div className="space-y-1.5">
+                    <div className="flex justify-between items-center text-xs">
+                      <span className="text-slate-300 font-medium">Body</span>
+                      <span className="text-amber-400 font-mono font-bold">
+                        {body2 ? `${body2} / 5` : <span className="text-slate-500 font-normal italic">Optional</span>}
+                      </span>
                     </div>
-                    <input
-                      type="range"
-                      min="1"
-                      max="5"
-                      step="1"
-                      value={body2 || 3}
-                      onChange={(e) => setBody2(parseInt(e.target.value))}
-                      className="w-full h-1.5 bg-slate-900 rounded-lg appearance-none cursor-pointer accent-wine-500"
-                    />
+                    <div className="grid grid-cols-5 gap-1.5">
+                      {[1, 2, 3, 4, 5].map((num) => {
+                        const isSelected = body2 === num;
+                        return (
+                          <button
+                            key={num}
+                            type="button"
+                            onClick={() => setBody2(isSelected ? undefined : num)}
+                            className={`py-1.5 text-xs font-bold rounded-lg border transition-all ${
+                              isSelected
+                                ? 'bg-amber-500/25 border-amber-400 text-amber-200 shadow-md shadow-amber-950/20 scale-[1.02]'
+                                : 'bg-slate-950/80 border-slate-800 text-slate-400 hover:text-slate-200 hover:border-slate-700'
+                            }`}
+                          >
+                            {num}
+                          </button>
+                        );
+                      })}
+                    </div>
+                    <div className="flex justify-between text-[10px] text-slate-500 font-medium px-0.5">
+                      <span>1 (Light)</span>
+                      <span>5 (Full)</span>
+                    </div>
                   </div>
 
-                  {/* Sweetness Slider */}
-                  <div className="space-y-1">
-                    <div className="flex justify-between text-xs">
-                      <span className="text-slate-300 font-medium">Sweetness (Dry → Sweet)</span>
-                      <span className="text-wine-300 font-mono font-bold">{sweetness2 ? `${sweetness2}/5` : 'Not Set'}</span>
+                  {/* Sweetness 1-5 Buttons */}
+                  <div className="space-y-1.5">
+                    <div className="flex justify-between items-center text-xs">
+                      <span className="text-slate-300 font-medium">Sweetness</span>
+                      <span className="text-amber-400 font-mono font-bold">
+                        {sweetness2 ? `${sweetness2} / 5` : <span className="text-slate-500 font-normal italic">Optional</span>}
+                      </span>
                     </div>
-                    <input
-                      type="range"
-                      min="1"
-                      max="5"
-                      step="1"
-                      value={sweetness2 || 3}
-                      onChange={(e) => setSweetness2(parseInt(e.target.value))}
-                      className="w-full h-1.5 bg-slate-900 rounded-lg appearance-none cursor-pointer accent-wine-500"
-                    />
+                    <div className="grid grid-cols-5 gap-1.5">
+                      {[1, 2, 3, 4, 5].map((num) => {
+                        const isSelected = sweetness2 === num;
+                        return (
+                          <button
+                            key={num}
+                            type="button"
+                            onClick={() => setSweetness2(isSelected ? undefined : num)}
+                            className={`py-1.5 text-xs font-bold rounded-lg border transition-all ${
+                              isSelected
+                                ? 'bg-amber-500/25 border-amber-400 text-amber-200 shadow-md shadow-amber-950/20 scale-[1.02]'
+                                : 'bg-slate-950/80 border-slate-800 text-slate-400 hover:text-slate-200 hover:border-slate-700'
+                            }`}
+                          >
+                            {num}
+                          </button>
+                        );
+                      })}
+                    </div>
+                    <div className="flex justify-between text-[10px] text-slate-500 font-medium px-0.5">
+                      <span>1 (Bone Dry)</span>
+                      <span>5 (Sweet)</span>
+                    </div>
                   </div>
                 </div>
               </div>
