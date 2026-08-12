@@ -1,9 +1,9 @@
 -- ============================================================================
--- SELF-HEALING SUPABASE SECURITY REMEDIATION SCRIPT
--- Resolves: 42P01 (Missing tables), rls_disabled_in_public, sensitive_columns_exposed
+-- COMPLETE SELF-HEALING SUPABASE SECURITY & SCHEMA MIGRATION
+-- Fixes: missing tables, missing columns (voter_token), rls_disabled_in_public, sensitive_columns_exposed
 -- ============================================================================
 
--- 0. Ensure all tables exist before enabling security
+-- STEP 1: Ensure all required tables exist
 CREATE TABLE IF NOT EXISTS public.sessions (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   name TEXT NOT NULL,
@@ -42,7 +42,6 @@ CREATE TABLE IF NOT EXISTS public.votes (
   slider_value NUMERIC NOT NULL,
   notes_wine_1 TEXT,
   notes_wine_2 TEXT,
-  voter_token UUID NOT NULL DEFAULT gen_random_uuid(),
   created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now())
 );
 
@@ -75,7 +74,6 @@ CREATE TABLE IF NOT EXISTS public.wishlist (
   source_session_id UUID,
   source_history_id TEXT,
   note TEXT,
-  voter_token UUID NOT NULL DEFAULT gen_random_uuid(),
   created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now())
 );
 
@@ -84,12 +82,34 @@ CREATE TABLE IF NOT EXISTS public.app_settings (
   value TEXT NOT NULL
 );
 
+-- STEP 2: Explicitly add all missing columns to existing tables (prevents 42703 column missing errors)
+ALTER TABLE public.votes ADD COLUMN IF NOT EXISTS voter_token UUID DEFAULT gen_random_uuid();
+ALTER TABLE public.votes ADD COLUMN IF NOT EXISTS perceived_price_1 TEXT;
+ALTER TABLE public.votes ADD COLUMN IF NOT EXISTS perceived_price_2 TEXT;
+ALTER TABLE public.votes ADD COLUMN IF NOT EXISTS buy_again_1 TEXT;
+ALTER TABLE public.votes ADD COLUMN IF NOT EXISTS buy_again_2 TEXT;
+ALTER TABLE public.votes ADD COLUMN IF NOT EXISTS acidity_1 NUMERIC;
+ALTER TABLE public.votes ADD COLUMN IF NOT EXISTS acidity_2 NUMERIC;
+ALTER TABLE public.votes ADD COLUMN IF NOT EXISTS body_1 NUMERIC;
+ALTER TABLE public.votes ADD COLUMN IF NOT EXISTS body_2 NUMERIC;
+ALTER TABLE public.votes ADD COLUMN IF NOT EXISTS sweetness_1 NUMERIC;
+ALTER TABLE public.votes ADD COLUMN IF NOT EXISTS sweetness_2 NUMERIC;
+
+ALTER TABLE public.wishlist ADD COLUMN IF NOT EXISTS voter_token UUID DEFAULT gen_random_uuid();
+
+ALTER TABLE public.wines ADD COLUMN IF NOT EXISTS varietal TEXT;
+ALTER TABLE public.wines ADD COLUMN IF NOT EXISTS region TEXT;
+ALTER TABLE public.wines ADD COLUMN IF NOT EXISTS country TEXT;
+ALTER TABLE public.wines ADD COLUMN IF NOT EXISTS style TEXT;
+ALTER TABLE public.wines ADD COLUMN IF NOT EXISTS blind_label TEXT;
+ALTER TABLE public.wines ADD COLUMN IF NOT EXISTS revealed BOOLEAN NOT NULL DEFAULT false;
+
 -- Seed default host passcode if missing
 INSERT INTO public.app_settings (key, value) 
 VALUES ('host_passcode', '1234') 
 ON CONFLICT (key) DO NOTHING;
 
--- 1. Enable Row Level Security (RLS) on all tables
+-- STEP 3: Enable Row Level Security (RLS) on all tables (resolves rls_disabled_in_public)
 ALTER TABLE public.sessions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.wines ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.votes ENABLE ROW LEVEL SECURITY;
@@ -97,7 +117,7 @@ ALTER TABLE public.history ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.app_settings ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.wishlist ENABLE ROW LEVEL SECURITY;
 
--- 2. Lock down app_settings table to protect host_passcode from direct REST API access
+-- STEP 4: Lock down app_settings table (resolves sensitive_columns_exposed)
 REVOKE ALL ON TABLE public.app_settings FROM PUBLIC, anon, authenticated;
 
 -- Ensure helper functions exist with SECURITY DEFINER
@@ -132,7 +152,7 @@ $$ LANGUAGE plpgsql SECURITY DEFINER;
 GRANT EXECUTE ON FUNCTION public.get_request_header(TEXT) TO PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.check_is_host() TO PUBLIC, anon, authenticated;
 
--- 3. Re-enforce clean RLS policies for all tables
+-- STEP 5: Re-enforce clean RLS policies for all tables
 
 -- SESSIONS
 DROP POLICY IF EXISTS "Allow public read on sessions" ON public.sessions;
