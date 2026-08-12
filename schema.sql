@@ -107,18 +107,11 @@ ALTER TABLE votes ENABLE ROW LEVEL SECURITY;
 ALTER TABLE history ENABLE ROW LEVEL SECURITY;
 ALTER TABLE app_settings ENABLE ROW LEVEL SECURITY;
 
--- Revoke all direct permissions on app_settings from public
--- This makes it impossible for public roles (anon/authenticated) to read app_settings directly
-CREATE POLICY "Deny direct read on app_settings" ON app_settings FOR ALL USING (false);
+-- Revoke all direct permissions on app_settings from public/anon/authenticated
+-- This makes it impossible for public roles to read app_settings directly via REST API
+REVOKE ALL ON TABLE app_settings FROM PUBLIC, anon, authenticated;
 
 -- Security Definer function to check host passcode
-CREATE OR REPLACE FUNCTION check_is_host()
-RETURNS BOOLEAN AS $$
-DECLARE
-  passed_code TEXT;
-  actual_code TEXT;
-END;
-$$;
 CREATE OR REPLACE FUNCTION check_is_host()
 RETURNS BOOLEAN AS $$
 DECLARE
@@ -130,6 +123,9 @@ BEGIN
   RETURN passed_code = actual_code;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
+
+GRANT EXECUTE ON FUNCTION get_request_header(TEXT) TO PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION check_is_host() TO PUBLIC, anon, authenticated;
 
 -- RLS Policies for sessions
 CREATE POLICY "Allow public read on sessions" ON sessions FOR SELECT USING (true);
