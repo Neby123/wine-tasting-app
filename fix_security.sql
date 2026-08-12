@@ -1,21 +1,103 @@
 -- ============================================================================
--- SUPABASE SECURITY ADVISOR REMEDIATION SCRIPT
--- Project: wine-tasting (rprjfaxsmwdzqwzycujh)
--- Resolves:
---   1. rls_disabled_in_public (CRITICAL)
---   2. sensitive_columns_exposed (CRITICAL)
+-- SELF-HEALING SUPABASE SECURITY REMEDIATION SCRIPT
+-- Resolves: 42P01 (Missing tables), rls_disabled_in_public, sensitive_columns_exposed
 -- ============================================================================
 
--- 1. Enable Row Level Security (RLS) on all public tables
-ALTER TABLE IF EXISTS public.sessions ENABLE ROW LEVEL SECURITY;
-ALTER TABLE IF EXISTS public.wines ENABLE ROW LEVEL SECURITY;
-ALTER TABLE IF EXISTS public.votes ENABLE ROW LEVEL SECURITY;
-ALTER TABLE IF EXISTS public.history ENABLE ROW LEVEL SECURITY;
-ALTER TABLE IF EXISTS public.app_settings ENABLE ROW LEVEL SECURITY;
-ALTER TABLE IF EXISTS public.wishlist ENABLE ROW LEVEL SECURITY;
+-- 0. Ensure all tables exist before enabling security
+CREATE TABLE IF NOT EXISTS public.sessions (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  name TEXT NOT NULL,
+  date TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()),
+  status TEXT NOT NULL DEFAULT 'setup',
+  match_winners JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now())
+);
 
--- 2. Lock down app_settings table to protect host_passcode
--- Revoke direct table permissions from anon, authenticated, and public roles
+CREATE TABLE IF NOT EXISTS public.wines (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  session_id UUID REFERENCES public.sessions(id) ON DELETE CASCADE,
+  submitted_by TEXT NOT NULL,
+  name TEXT NOT NULL,
+  producer TEXT,
+  vintage TEXT,
+  price NUMERIC NOT NULL,
+  varietal TEXT,
+  region TEXT,
+  country TEXT,
+  style TEXT,
+  tasting_notes TEXT,
+  image_url TEXT,
+  blind_label TEXT,
+  revealed BOOLEAN NOT NULL DEFAULT false,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now())
+);
+
+CREATE TABLE IF NOT EXISTS public.votes (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  session_id UUID REFERENCES public.sessions(id) ON DELETE CASCADE,
+  voter_name TEXT NOT NULL,
+  match_id TEXT NOT NULL,
+  wine_1_label TEXT NOT NULL,
+  wine_2_label TEXT NOT NULL,
+  slider_value NUMERIC NOT NULL,
+  notes_wine_1 TEXT,
+  notes_wine_2 TEXT,
+  voter_token UUID NOT NULL DEFAULT gen_random_uuid(),
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now())
+);
+
+CREATE TABLE IF NOT EXISTS public.history (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  date TEXT NOT NULL,
+  winner_name TEXT NOT NULL,
+  winner_price NUMERIC NOT NULL,
+  winner_brought_by TEXT NOT NULL,
+  wines_count INTEGER NOT NULL,
+  group_winner TEXT NOT NULL,
+  second_place TEXT NOT NULL,
+  best_value TEXT NOT NULL,
+  giant_killer TEXT,
+  wines JSONB NOT NULL DEFAULT '[]'::jsonb,
+  votes JSONB NOT NULL DEFAULT '[]'::jsonb,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now())
+);
+
+CREATE TABLE IF NOT EXISTS public.wishlist (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  voter_name TEXT NOT NULL,
+  wine_name TEXT NOT NULL,
+  producer TEXT,
+  vintage TEXT,
+  varietal TEXT,
+  region TEXT,
+  price NUMERIC,
+  source_session_id UUID,
+  source_history_id TEXT,
+  note TEXT,
+  voter_token UUID NOT NULL DEFAULT gen_random_uuid(),
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now())
+);
+
+CREATE TABLE IF NOT EXISTS public.app_settings (
+  key TEXT PRIMARY KEY,
+  value TEXT NOT NULL
+);
+
+-- Seed default host passcode if missing
+INSERT INTO public.app_settings (key, value) 
+VALUES ('host_passcode', '1234') 
+ON CONFLICT (key) DO NOTHING;
+
+-- 1. Enable Row Level Security (RLS) on all tables
+ALTER TABLE public.sessions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.wines ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.votes ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.history ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.app_settings ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.wishlist ENABLE ROW LEVEL SECURITY;
+
+-- 2. Lock down app_settings table to protect host_passcode from direct REST API access
 REVOKE ALL ON TABLE public.app_settings FROM PUBLIC, anon, authenticated;
 
 -- Ensure helper functions exist with SECURITY DEFINER
@@ -46,11 +128,11 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
--- Grant EXECUTE permission on security functions to public/anon/authenticated
+-- Grant EXECUTE permission on security functions
 GRANT EXECUTE ON FUNCTION public.get_request_header(TEXT) TO PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.check_is_host() TO PUBLIC, anon, authenticated;
 
--- 3. Re-enforce and recreate clean RLS policies for all tables
+-- 3. Re-enforce clean RLS policies for all tables
 
 -- SESSIONS
 DROP POLICY IF EXISTS "Allow public read on sessions" ON public.sessions;
