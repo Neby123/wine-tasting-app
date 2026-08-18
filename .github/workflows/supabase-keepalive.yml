@@ -1,0 +1,22 @@
+name: Supabase Keepalive Ping
+
+on:
+  schedule:
+    # Runs every 3 days at 12:00 UTC to prevent auto-pausing
+    - cron: '0 12 */3 * *'
+  workflow_dispatch: # Enables manual run from GitHub Actions UI
+
+jobs:
+  keepalive:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping Supabase REST API
+        run: |
+          echo "Pinging Supabase project rprjfaxsmwdzqwzycujh..."
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" "https://rprjfaxsmwdzqwzycujh.supabase.co/rest/v1/")
+          echo "HTTP Response Status Code: $STATUS"
+          if [ "$STATUS" -ge 200 ] && [ "$STATUS" -lt 500 ]; then
+            echo "SUCCESS: Supabase API ping recorded. Activity timer reset."
+          else
+            echo "WARNING: Received HTTP $STATUS"
+          fi
