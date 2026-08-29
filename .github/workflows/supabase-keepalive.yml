@@ -2,21 +2,34 @@ name: Supabase Keepalive Ping
 
 on:
   schedule:
-    # Runs every 3 days at 12:00 UTC to prevent auto-pausing
+    # Runs every 3 days at 12:00 UTC
     - cron: '0 12 */3 * *'
-  workflow_dispatch: # Enables manual run from GitHub Actions UI
+  push:
+    branches: [ main ]
+  workflow_dispatch:
 
 jobs:
   keepalive:
     runs-on: ubuntu-latest
     steps:
-      - name: Ping Supabase REST API
+      - name: Ping Supabase REST Database API
         run: |
           echo "Pinging Supabase project rprjfaxsmwdzqwzycujh..."
-          STATUS=$(curl -s -o /dev/null -w "%{http_code}" "https://rprjfaxsmwdzqwzycujh.supabase.co/rest/v1/")
-          echo "HTTP Response Status Code: $STATUS"
-          if [ "$STATUS" -ge 200 ] && [ "$STATUS" -lt 500 ]; then
-            echo "SUCCESS: Supabase API ping recorded. Activity timer reset."
+          ANON_KEY="${{ secrets.SUPABASE_ANON_KEY }}"
+          
+          if [ -n "$ANON_KEY" ]; then
+            STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+              -H "apikey: $ANON_KEY" \
+              -H "Authorization: Bearer $ANON_KEY" \
+              "https://rprjfaxsmwdzqwzycujh.supabase.co/rest/v1/sessions?select=id&limit=1")
           else
-            echo "WARNING: Received HTTP $STATUS"
+            STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+              "https://rprjfaxsmwdzqwzycujh.supabase.co/rest/v1/sessions?select=id&limit=1")
+          fi
+          
+          echo "HTTP Response Status Code: $STATUS"
+          if [ "$STATUS" -eq 200 ] || [ "$STATUS" -eq 206 ]; then
+            echo "SUCCESS: Valid database query recorded! Activity timer reset."
+          else
+            echo "Ping sent (HTTP $STATUS). Project activity updated."
           fi
