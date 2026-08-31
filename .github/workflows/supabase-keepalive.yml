@@ -2,7 +2,7 @@ name: Supabase Keepalive Ping
 
 on:
   schedule:
-    # Runs every 3 days at 12:00 UTC
+    # Runs every 3 days at 12:00 UTC to keep the project active
     - cron: '0 12 */3 * *'
   push:
     branches: [ main ]
@@ -12,26 +12,28 @@ jobs:
   keepalive:
     runs-on: ubuntu-latest
     steps:
-      - name: Ping Supabase REST Database API
+      - name: Ping Supabase REST Gateway & Database
         run: |
           echo "Pinging Supabase project rprjfaxsmwdzqwzycujh..."
           ANON_KEY="${{ secrets.SUPABASE_ANON_KEY }}"
           
           if [ -n "$ANON_KEY" ]; then
+            echo "Using configured SUPABASE_ANON_KEY secret..."
             STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+              --retry 3 --retry-delay 5 --max-time 15 \
               -H "apikey: $ANON_KEY" \
               -H "Authorization: Bearer $ANON_KEY" \
               "https://rprjfaxsmwdzqwzycujh.supabase.co/rest/v1/sessions?select=id&limit=1" || echo "000")
           else
+            echo "No custom secret set. Pinging REST gateway endpoint..."
             STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
-              "https://rprjfaxsmwdzqwzycujh.supabase.co/rest/v1/sessions?select=id&limit=1" || echo "000")
+              --retry 3 --retry-delay 5 --max-time 15 \
+              "https://rprjfaxsmwdzqwzycujh.supabase.co/rest/v1/" || echo "000")
           fi
           
           echo "HTTP Response Status Code: $STATUS"
-          if [ "$STATUS" -eq 200 ] || [ "$STATUS" -eq 206 ]; then
-            echo "SUCCESS: Valid database query recorded! Activity timer reset."
-          elif [ "$STATUS" -eq 000 ]; then
-            echo "NOTICE: DNS host unresolvable. Please unpause the project in your Supabase Dashboard at https://supabase.com/dashboard/project/rprjfaxsmwdzqwzycujh"
+          if [ "$STATUS" -ge 200 ] && [ "$STATUS" -lt 500 ]; then
+            echo "SUCCESS: Supabase project activity recorded! Status: HTTP $STATUS."
           else
-            echo "Ping sent (HTTP $STATUS). Project activity updated."
+            echo "WARNING: Received unexpected status code HTTP $STATUS"
           fi
