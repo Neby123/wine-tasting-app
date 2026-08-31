@@ -21,15 +21,17 @@ jobs:
             STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
               -H "apikey: $ANON_KEY" \
               -H "Authorization: Bearer $ANON_KEY" \
-              "https://rprjfaxsmwdzqwzycujh.supabase.co/rest/v1/sessions?select=id&limit=1")
+              "https://rprjfaxsmwdzqwzycujh.supabase.co/rest/v1/sessions?select=id&limit=1" || echo "000")
           else
             STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
-              "https://rprjfaxsmwdzqwzycujh.supabase.co/rest/v1/sessions?select=id&limit=1")
+              "https://rprjfaxsmwdzqwzycujh.supabase.co/rest/v1/sessions?select=id&limit=1" || echo "000")
           fi
           
           echo "HTTP Response Status Code: $STATUS"
           if [ "$STATUS" -eq 200 ] || [ "$STATUS" -eq 206 ]; then
             echo "SUCCESS: Valid database query recorded! Activity timer reset."
+          elif [ "$STATUS" -eq 000 ]; then
+            echo "NOTICE: DNS host unresolvable. Please unpause the project in your Supabase Dashboard at https://supabase.com/dashboard/project/rprjfaxsmwdzqwzycujh"
           else
             echo "Ping sent (HTTP $STATUS). Project activity updated."
           fi
