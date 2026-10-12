@@ -88,6 +88,7 @@ function Remove-SafeStagingFolder([string]$FolderPath) {
             }
         }
         foreach ($File in $Current.GetFiles()) {
+            if ($File.IsReadOnly) { $File.IsReadOnly = $false }
             $File.Delete()
         }
     }
@@ -142,6 +143,7 @@ function Remove-SafeTempFolder([string]$FolderPath) {
             }
         }
         foreach ($File in $Current.GetFiles()) {
+            if ($File.IsReadOnly) { $File.IsReadOnly = $false }
             $File.Delete()
         }
     }
@@ -222,19 +224,28 @@ try {
                     if ($VarValue -match '(?i)(sb_secret_|service_role|master_key)') {
                         throw "Security violation in .env: Sensitive key pattern detected in variable '$VarName'."
                     }
-                    $TokenParts = $VarValue.Split('.')
-                    if ($TokenParts.Length -ge 2) {
+                    if ($VarValue.StartsWith("sb_publishable_")) {
+                        # Modern Supabase publishable key format
+                    } else {
+                        $TokenParts = $VarValue.Split('.')
+                        if ($TokenParts.Length -lt 2) {
+                            throw "Security violation in .env: '$VarName' must be a valid JWT or publishable token."
+                        }
                         $IsAnonRole = $false
                         try {
                             $B64 = $TokenParts[1].Replace('-', '+').Replace('_', '/')
                             switch ($B64.Length % 4) { 2 { $B64 += "==" } 3 { $B64 += "=" } }
-                            $Payload = [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String($B64))
-                            if ($Payload -match '"role"\s*:\s*"anon"') {
+                            $PayloadBytes = [System.Convert]::FromBase64String($B64)
+                            $PayloadJson = [System.Text.Encoding]::UTF8.GetString($PayloadBytes)
+                            $PayloadObj = $PayloadJson | ConvertFrom-Json
+                            if ($PayloadObj.role -eq 'anon') {
                                 $IsAnonRole = $true
                             }
-                        } catch { }
+                        } catch {
+                            throw "Security violation in .env: Malformed JWT token in variable '$VarName'."
+                        }
                         if (-not $IsAnonRole) {
-                            throw "Security violation in .env: JWT token in variable '$VarName' does not contain a verified anon role claim."
+                            throw "Security violation in .env: JWT token in variable '$VarName' does not contain an anon role claim."
                         }
                     }
                 }

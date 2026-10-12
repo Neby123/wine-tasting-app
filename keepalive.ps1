@@ -33,9 +33,16 @@ try {
             exit 1
         }
 
-        # Guard against legacy JWT service_role keys (fail-closed if token payload cannot be validated)
-        $TokenParts = $ApiKey.Split('.')
-        if ($TokenParts.Length -ge 2) {
+        # Guard against non-anon keys: allow only publishable keys or JWTs with verified anon role claim
+        if ($ApiKey.StartsWith("sb_publishable_")) {
+            # Modern Supabase publishable key format
+        } else {
+            $TokenParts = $ApiKey.Split('.')
+            if ($TokenParts.Length -lt 2) {
+                Write-Host "SECURITY ERROR: ApiKey must be a valid JWT or publishable token." -ForegroundColor Red
+                exit 1
+            }
+
             $IsAnonRole = $false
             try {
                 $Base64Payload = $TokenParts[1].Replace('-', '+').Replace('_', '/')
@@ -45,11 +52,8 @@ try {
                 }
                 $PayloadBytes = [System.Convert]::FromBase64String($Base64Payload)
                 $PayloadJson = [System.Text.Encoding]::UTF8.GetString($PayloadBytes)
-                if ($PayloadJson -match '"role"\s*:\s*"service_role"') {
-                    Write-Host "SECURITY ERROR: service_role JWT claim detected. Refusing to execute keepalive with administrative key. Provide anon key only." -ForegroundColor Red
-                    exit 1
-                }
-                if ($PayloadJson -match '"role"\s*:\s*"anon"') {
+                $PayloadObj = $PayloadJson | ConvertFrom-Json
+                if ($PayloadObj.role -eq 'anon') {
                     $IsAnonRole = $true
                 }
             } catch {
@@ -73,21 +77,27 @@ try {
         $FileSecurity.SetAccessRuleProtection($true, $false) # Strip inherited permissions
         $FileSecurity.SetAccessRule($OwnerRule)
 
-        $FileStream = New-Object System.IO.FileStream(
-            $TempConfigFile,
-            [System.IO.FileMode]::CreateNew,
-            [System.Security.AccessControl.FileSystemRights]::FullControl,
-            [System.IO.FileShare]::None,
-            4096,
-            [System.IO.FileOptions]::None,
-            $FileSecurity
-        )
+        $FileStream = $null
+        $Writer = $null
+        try {
+            $FileStream = New-Object System.IO.FileStream(
+                $TempConfigFile,
+                [System.IO.FileMode]::CreateNew,
+                [System.Security.AccessControl.FileSystemRights]::FullControl,
+                [System.IO.FileShare]::None,
+                4096,
+                [System.IO.FileOptions]::None,
+                $FileSecurity
+            )
 
-        $Writer = New-Object System.IO.StreamWriter($FileStream, [System.Text.Encoding]::ASCII)
-        $Writer.WriteLine("header = `"apikey: $ApiKey`"")
-        $Writer.WriteLine("header = `"Authorization: Bearer $ApiKey`"")
-        $Writer.Flush()
-        $FileStream.Close()
+            $Writer = New-Object System.IO.StreamWriter($FileStream, [System.Text.Encoding]::ASCII)
+            $Writer.WriteLine("header = `"apikey: $ApiKey`"")
+            $Writer.WriteLine("header = `"Authorization: Bearer $ApiKey`"")
+            $Writer.Flush()
+        } finally {
+            if ($Writer) { $Writer.Dispose() }
+            if ($FileStream) { $FileStream.Dispose() }
+        }
 
         $curlArgs += @("-K", $TempConfigFile)
     } else {
