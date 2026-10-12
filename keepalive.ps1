@@ -23,11 +23,17 @@ try {
     if ($ApiKey) {
         # Validate format: prevent curl config injection
         if ($ApiKey -notmatch '^[A-Za-z0-9._-]+$') {
-            Write-Host "SECURITY ERROR: ApiKey contains invalid characters. Must be a valid JWT token." -ForegroundColor Red
+            Write-Host "SECURITY ERROR: ApiKey contains invalid characters. Must be a valid alphanumeric token." -ForegroundColor Red
             exit 1
         }
 
-        # Guard against service_role key leakage: decode JWT payload role claim
+        # Guard against newer sb_secret_ format or high-privilege keywords
+        if ($ApiKey -match '(?i)(sb_secret_|service_role|master_key)') {
+            Write-Host "SECURITY ERROR: High-privilege secret key pattern detected. Refusing to execute keepalive with administrative key. Provide anon key only." -ForegroundColor Red
+            exit 1
+        }
+
+        # Guard against legacy JWT service_role keys
         $TokenParts = $ApiKey.Split('.')
         if ($TokenParts.Length -ge 2) {
             try {
@@ -39,11 +45,11 @@ try {
                 $PayloadBytes = [System.Convert]::FromBase64String($Base64Payload)
                 $PayloadJson = [System.Text.Encoding]::UTF8.GetString($PayloadBytes)
                 if ($PayloadJson -match '"role"\s*:\s*"service_role"') {
-                    Write-Host "SECURITY ERROR: service_role key detected. Refusing to execute keepalive with administrative key. Provide anon key only." -ForegroundColor Red
+                    Write-Host "SECURITY ERROR: service_role JWT claim detected. Refusing to execute keepalive with administrative key. Provide anon key only." -ForegroundColor Red
                     exit 1
                 }
             } catch {
-                # Non-standard JWT formatting; continue with character validation
+                # Non-standard JWT formatting; continue
             }
         }
 

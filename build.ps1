@@ -52,38 +52,42 @@ function Remove-SafeStagingFolder([string]$FolderPath) {
         return
     }
 
-    # Inspect the directory tree for any reparse points before attempting deletion
     $TopItem = Get-Item -LiteralPath $CanonicalPath -Force -ErrorAction SilentlyContinue
     if (-not $TopItem) { return }
 
-    $HasReparsePoints = ($TopItem.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0
-    if (-not $HasReparsePoints) {
-        $ChildReparse = Get-ChildItem -LiteralPath $CanonicalPath -Recurse -Force -ErrorAction SilentlyContinue | Where-Object {
-            ($_.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0
-        }
-        if ($ChildReparse) { $HasReparsePoints = $true }
-    }
-
-    if ($HasReparsePoints) {
-        Write-Warning "Reparse point detected in $CanonicalPath. Safely removing link without recursing into target..."
-        # On Windows, cmd rmdir deletes directory junctions without deleting the contents of the target folder
+    # If top item is a reparse point (junction/symlink), remove the link only without recursing into target
+    if (($TopItem.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) {
+        Write-Warning "Reparse point detected on $CanonicalPath. Safely removing link without traversing contents..."
         cmd /c rmdir "$CanonicalPath" 2>&1 | Out-Null
         return
     }
 
-    # Safe native non-traversing recursive removal
+    # Inspect tree for any nested reparse points
+    $ChildReparse = Get-ChildItem -LiteralPath $CanonicalPath -Recurse -Force -ErrorAction SilentlyContinue | Where-Object {
+        ($_.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0
+    }
+    if ($ChildReparse) {
+        Write-Warning "Nested reparse point detected in $CanonicalPath. Refusing to remove folder to prevent traversal."
+        return
+    }
+
+    # Delete via native cmd rmdir which does not follow symlinks/junctions
     cmd /c rmdir /s /q "$CanonicalPath" 2>&1 | Out-Null
     if (Test-Path -LiteralPath $CanonicalPath) {
-        Remove-Item -LiteralPath $CanonicalPath -Recurse -Force -ErrorAction SilentlyContinue
+        throw "Failed to safely remove staging folder: $CanonicalPath"
     }
 }
 
-# Outer try/finally guarantees the lock file stream is ALWAYS closed and disposed
+# Outer try/catch/finally guarantees lock disposal and proper error propagation
 try {
-    # Startup sweep: Clean stale temporary build folders in TEMP from previous interrupted runs (older than 1 hour)
-    Get-ChildItem -LiteralPath $env:TEMP -Filter "wine-tasting-build-*" -Directory -ErrorAction SilentlyContinue | ForEach-Object {
+    # Startup sweep: Clean stale temporary build folders in TEMP belonging strictly to this project hash (older than 1 hour)
+    Get-ChildItem -LiteralPath $env:TEMP -Filter "wine-tasting-build-$ProjectHash-*" -Directory -ErrorAction SilentlyContinue | ForEach-Object {
         if ($_.LastWriteTime -lt (Get-Date).AddHours(-1)) {
-            Remove-Item -LiteralPath $_.FullName -Recurse -Force -ErrorAction SilentlyContinue
+            $TempFolder = $_.FullName
+            $Item = Get-Item -LiteralPath $TempFolder -Force -ErrorAction SilentlyContinue
+            if ($Item -and (($Item.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -eq 0)) {
+                cmd /c rmdir /s /q "$TempFolder" 2>&1 | Out-Null
+            }
         }
     }
 
@@ -104,21 +108,15 @@ try {
         Remove-SafeStagingFolder $_.FullName
     }
 
-    # Generate unique isolated temporary build directory
-    $BuildDir = Join-Path $env:TEMP "wine-tasting-build-$BuildGuid"
+    # Generate unique isolated temporary build directory scoped to this project hash
+    $BuildDir = Join-Path $env:TEMP "wine-tasting-build-$ProjectHash-$BuildGuid"
 
-    # Locate Node/npm (prioritize system PATH, followed by explicit environment or local project node-portable)
+    # Locate Node/npm strictly from system PATH (reject execution of unverified binaries from synced cloud directories)
     $SystemNpm = Get-Command npm.cmd, npm -ErrorAction SilentlyContinue | Select-Object -First 1
-    $NpmCmd = ""
-    if ($SystemNpm) {
-        $NpmCmd = $SystemNpm.Source
-    } elseif ($env:NODE_PORTABLE_PATH -and (Test-Path (Join-Path $env:NODE_PORTABLE_PATH "npm.cmd"))) {
-        $NpmCmd = Join-Path $env:NODE_PORTABLE_PATH "npm.cmd"
-    } elseif (Test-Path (Join-Path $ProjectDir "node-portable\npm.cmd")) {
-        $NpmCmd = Join-Path $ProjectDir "node-portable\npm.cmd"
-    } else {
-        throw "npm command could not be located in system PATH or configured NODE_PORTABLE_PATH. Install Node.js or configure environment."
+    if (-not $SystemNpm) {
+        throw "npm command could not be located in system PATH. Install Node.js globally to compile this application."
     }
+    $NpmCmd = $SystemNpm.Source
 
     Write-Host "=========================================" -ForegroundColor Yellow
     Write-Host "   Wine Tasting Web App Compilation" -ForegroundColor Yellow
@@ -137,11 +135,36 @@ try {
     }
     Copy-Item -Path $ProjectLockFile -Destination (Join-Path $BuildDir "package-lock.json") -Force
 
-    # Copy ONLY frontend VITE_* environment variables into the isolated build folder to prevent secret exposure
+    # Copy ONLY frontend public VITE_* environment variables into the isolated build folder
     $LocalEnv = Join-Path $ProjectDir ".env"
     if (Test-Path $LocalEnv) {
-        $ViteEnvLines = Get-Content -LiteralPath $LocalEnv | Where-Object { $_ -match '^\s*VITE_' }
-        if ($ViteEnvLines) {
+        $ViteEnvLines = @()
+        Get-Content -LiteralPath $LocalEnv | ForEach-Object {
+            $Line = $_.Trim()
+            if ($Line -match '^VITE_') {
+                # Reject sensitive credential patterns from being bundled into client assets
+                if ($Line -match '(?i)(service_role|secret|sb_secret_|private|password|master)') {
+                    throw "Security violation in .env: Sensitive keyword detected in frontend variable: $Line. High-privilege secrets must never be exposed via VITE_* variables."
+                }
+                # Check for JWT with service_role claim
+                if ($Line -match '(eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+)') {
+                    $Token = $Matches[1]
+                    $Parts = $Token.Split('.')
+                    if ($Parts.Length -ge 2) {
+                        try {
+                            $B64 = $Parts[1].Replace('-', '+').Replace('_', '/')
+                            switch ($B64.Length % 4) { 2 { $B64 += "==" } 3 { $B64 += "=" } }
+                            $Payload = [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String($B64))
+                            if ($Payload -match '"role"\s*:\s*"service_role"') {
+                                throw "Security violation in .env: Service role JWT detected in VITE_* variable: $Line"
+                            }
+                        } catch { }
+                    }
+                }
+                $ViteEnvLines += $Line
+            }
+        }
+        if ($ViteEnvLines.Count -gt 0) {
             $TargetEnv = Join-Path $BuildDir ".env"
             [System.IO.File]::WriteAllLines($TargetEnv, $ViteEnvLines)
         }
@@ -190,12 +213,15 @@ try {
     }
 
     $BuildSucceeded = $true
-}
-finally {
+} catch {
+    Set-Location $OriginalLocation
+    Write-Host "BUILD ERROR: $_" -ForegroundColor Red
+    $BuildSucceeded = $false
+} finally {
     Set-Location $OriginalLocation
     Write-Host "6. Cleaning up temporary build artifacts..." -ForegroundColor Cyan
     if ($BuildDir -and (Test-Path $BuildDir)) {
-        Remove-Item $BuildDir -Recurse -Force -ErrorAction SilentlyContinue
+        cmd /c rmdir /s /q "$BuildDir" 2>&1 | Out-Null
     }
 
     # If build failed before clean completion, roll back from backup if target is missing
@@ -223,6 +249,7 @@ if ($BuildSucceeded) {
     Write-Host "SUCCESS: Build complete! Verified distribution files in:" -ForegroundColor Green
     Write-Host $TargetDist -ForegroundColor White
     Write-Host "=========================================" -ForegroundColor Green
+    exit 0
 } else {
     Write-Host "BUILD FAILED: See error log above." -ForegroundColor Red
     exit 1

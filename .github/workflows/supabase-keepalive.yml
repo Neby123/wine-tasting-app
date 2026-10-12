@@ -39,14 +39,14 @@ jobs:
             if [ -n "$ANON_KEY" ]; then
               echo "SUCCESS: Authenticated database query completed! Activity timer reset."
             else
-              echo "SUCCESS: Unauthenticated gateway ping completed (HTTP $STATUS)."
+              echo "SUCCESS: Gateway ping completed (HTTP $STATUS). NOTE: SUPABASE_ANON_KEY was not set; request reached gateway but did not query Postgres tables."
             fi
           elif [ "$STATUS" = "401" ]; then
             if [ -n "$ANON_KEY" ]; then
               echo "ERROR: SUPABASE_ANON_KEY secret was provided but rejected by Supabase (HTTP 401 Unauthorized). Verify repository secret."
               exit 1
             else
-              echo "GATEWAY ACTIVE: Inbound traffic recorded by Supabase REST gateway (HTTP 401). Set SUPABASE_ANON_KEY secret for authenticated table queries."
+              echo "GATEWAY ACTIVE: Inbound traffic recorded by Supabase REST gateway (HTTP 401). NOTE: SUPABASE_ANON_KEY secret is not set; database activity timer was not refreshed."
             fi
           elif [ "$STATUS" = "000" ]; then
             echo "ERROR: Failed to establish network connection or resolve host (Supabase project may be paused in dashboard)."
