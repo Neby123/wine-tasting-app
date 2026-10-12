@@ -18,7 +18,7 @@ jobs:
           ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
         run: |
           echo "Pinging Supabase project rprjfaxsmwdzqwzycujh..."
-          
+
           if [ -z "$ANON_KEY" ]; then
             echo "ERROR: SUPABASE_ANON_KEY secret is not configured in repository secrets."
             echo "Supabase database activity keepalive requires an anon API key to query Postgres tables."
@@ -30,15 +30,33 @@ jobs:
             exit 1
           fi
 
+          if [[ "$ANON_KEY" =~ (sb_secret_|service_role|master_key) ]]; then
+            echo "SECURITY ERROR: High-privilege secret key pattern detected in SUPABASE_ANON_KEY secret. Provide anon key only."
+            exit 1
+          fi
+
+          # Decode JWT payload role claim
+          IFS='.' read -ra JWT_PARTS <<< "$ANON_KEY"
+          if [ "${#JWT_PARTS[@]}" -ge 2 ]; then
+            PAYLOAD_B64="${JWT_PARTS[1]}"
+            REM=$(( ${#PAYLOAD_B64} % 4 ))
+            if [ $REM -eq 2 ]; then PAYLOAD_B64="${PAYLOAD_B64}=="; elif [ $REM -eq 3 ]; then PAYLOAD_B64="${PAYLOAD_B64}="; fi
+            DECODED_PAYLOAD=$(echo "$PAYLOAD_B64" | tr '_-' '/+' | base64 -d 2>/dev/null || true)
+            if echo "$DECODED_PAYLOAD" | grep -q '"role"[[:space:]]*:[[:space:]]*"service_role"'; then
+              echo "SECURITY ERROR: service_role JWT claim detected in SUPABASE_ANON_KEY secret. Refusing to execute keepalive with administrative key. Provide anon key only."
+              exit 1
+            fi
+          fi
+
           echo "Authenticated mode: Querying sessions table with repository secret..."
           RAW_STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
             --retry 3 --retry-delay 5 --max-time 15 \
             -K <(printf 'header = "apikey: %s"\nheader = "Authorization: Bearer %s"\n' "$ANON_KEY" "$ANON_KEY") \
             "https://rprjfaxsmwdzqwzycujh.supabase.co/rest/v1/sessions?select=id&limit=1" || true)
-          
+
           STATUS="${RAW_STATUS:-000}"
           echo "HTTP Response Status Code: $STATUS"
-          
+
           if [ "$STATUS" = "200" ] || [ "$STATUS" = "206" ]; then
             echo "SUCCESS: Authenticated database query completed! Activity timer reset."
           elif [ "$STATUS" = "401" ]; then
@@ -48,6 +66,6 @@ jobs:
             echo "ERROR: Failed to establish network connection or resolve host (Supabase project may be paused in dashboard)."
             exit 1
           else
-            echo "NOTICE: Inbound ping completed with status HTTP $STATUS."
+            echo "ERROR: Unexpected HTTP status code $STATUS received from Supabase."
+            exit 1
           fi
-

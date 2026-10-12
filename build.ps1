@@ -8,8 +8,8 @@ $ProjectDir = $PSScriptRoot
 if (-not $ProjectDir) { $ProjectDir = (Get-Location).Path }
 $ProjectDirCanonical = [System.IO.Path]::GetFullPath($ProjectDir).TrimEnd('\', '/') + [System.IO.Path]::DirectorySeparatorChar
 
-# Local lockfile in TEMP derived from project path hash (prevents Google Drive cloud sync locks)
-$ProjectBytes = [System.Text.Encoding]::UTF8.GetBytes($ProjectDir.ToLowerInvariant())
+# Local lockfile in TEMP derived from canonical project path hash (prevents Google Drive cloud sync locks)
+$ProjectBytes = [System.Text.Encoding]::UTF8.GetBytes($ProjectDirCanonical.ToLowerInvariant())
 $Hasher = [System.Security.Cryptography.SHA256]::Create()
 $ProjectHash = [System.BitConverter]::ToString($Hasher.ComputeHash($ProjectBytes)).Replace("-", "").Substring(0, 16)
 $LockFilePath = Join-Path $env:TEMP "wine_tasting_build_$ProjectHash.lock"
@@ -43,7 +43,7 @@ $StagingDist = Join-Path $ProjectDir "dist_staging_$BuildGuid"
 $BackupDist = Join-Path $ProjectDir "dist_backup_$BuildTimestamp"
 $TargetDist = Join-Path $ProjectDir "dist"
 
-# Safe folder deletion helper: enforces strict project containment and uses .NET DirectoryInfo to safely unlink junctions without following them
+# Safe non-traversing folder deletion: uses explicit stack walk and unlinks reparse points without following them
 function Remove-SafeStagingFolder([string]$FolderPath) {
     if (-not (Test-Path -LiteralPath $FolderPath)) { return }
     $CanonicalPath = [System.IO.Path]::GetFullPath($FolderPath)
@@ -55,28 +55,39 @@ function Remove-SafeStagingFolder([string]$FolderPath) {
     $DirInfo = New-Object System.IO.DirectoryInfo($CanonicalPath)
     if (-not $DirInfo.Exists) { return }
 
-    # If top item is a reparse point (junction/symlink), safely delete the junction without recursing into target
+    # If top item is a reparse point (junction/symlink), safely unlink without recursing into target
     if (($DirInfo.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) {
-        Write-Warning "Reparse point detected on $CanonicalPath. Safely deleting junction link..."
+        Write-Warning "Reparse point detected on root $CanonicalPath. Safely deleting junction link..."
         $DirInfo.Delete($false)
         return
     }
 
-    # Verify no descendant items are reparse points before recursive deletion
-    $AllItems = $DirInfo.GetFileSystemInfos("*", [System.IO.SearchOption]::AllDirectories)
-    foreach ($Item in $AllItems) {
-        if (($Item.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) {
-            Write-Warning "Reparse point detected inside $CanonicalPath ($($Item.FullName)). Unlinking reparse point..."
-            if ($Item -is [System.IO.DirectoryInfo]) {
-                $Item.Delete($false)
+    # Stack-based breadth-first walk to detect and unlink reparse points before descending
+    $Stack = New-Object System.Collections.Generic.Stack[System.IO.DirectoryInfo]
+    $DirsToDelete = New-Object System.Collections.Generic.List[System.IO.DirectoryInfo]
+    $Stack.Push($DirInfo)
+
+    while ($Stack.Count -gt 0) {
+        $Current = $Stack.Pop()
+        $DirsToDelete.Add($Current)
+
+        foreach ($Sub in $Current.GetDirectories()) {
+            if (($Sub.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) {
+                Write-Warning "Reparse point detected inside $CanonicalPath ($($Sub.FullName)). Safely unlinking without traversal..."
+                $Sub.Delete($false)
             } else {
-                $Item.Delete()
+                $Stack.Push($Sub)
             }
+        }
+        foreach ($File in $Current.GetFiles()) {
+            $File.Delete()
         }
     }
 
-    # Delete verified directory tree safely via .NET API
-    [System.IO.Directory]::Delete($CanonicalPath, $true)
+    # Delete unlinked directories from deepest child up to root
+    for ($i = $DirsToDelete.Count - 1; $i -ge 0; $i--) {
+        $DirsToDelete[$i].Delete($false)
+    }
 }
 
 # Outer try/catch/finally guarantees lock disposal and proper error propagation
@@ -87,7 +98,7 @@ try {
             $TempFolder = $_.FullName
             $Item = Get-Item -LiteralPath $TempFolder -Force -ErrorAction SilentlyContinue
             if ($Item -and (($Item.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -eq 0)) {
-                try { [System.IO.Directory]::Delete($TempFolder, $true) } catch { }
+                try { Remove-SafeStagingFolder $TempFolder } catch { }
             }
         }
     }
@@ -112,7 +123,7 @@ try {
     # Generate unique isolated temporary build directory scoped to this project hash
     $BuildDir = Join-Path $env:TEMP "wine-tasting-build-$ProjectHash-$BuildGuid"
 
-    # Locate Node/npm strictly from system PATH (reject execution of unverified binaries from synced cloud directories)
+    # Locate Node/npm strictly from system PATH
     $SystemNpm = Get-Command npm.cmd, npm -ErrorAction SilentlyContinue | Select-Object -First 1
     if (-not $SystemNpm) {
         throw "npm command could not be located in system PATH. Install Node.js globally to compile this application."
@@ -144,7 +155,7 @@ try {
             $Line = $_.Trim()
             if ($Line -match '^VITE_') {
                 # Reject sensitive credential patterns from being bundled into client assets
-                if ($Line -match '(?i)(service_role|secret|sb_secret_|private|password|master)') {
+                if ($Line -match '(?i)(service_role|secret|sb_secret_|private|password|master|admin)') {
                     throw "Security violation in .env: Sensitive keyword detected in frontend variable: $Line. High-privilege secrets must never be exposed via VITE_* variables."
                 }
                 # Check for JWT with service_role claim
@@ -214,7 +225,7 @@ try {
     Write-Host "5. Publishing verified distribution..." -ForegroundColor Cyan
     Copy-Item -Path $CompiledDist -Destination $StagingDist -Recurse -Force
 
-    # Swap distribution directory
+    # Swap distribution directory: target is backed up, staging is renamed to target
     if (Test-Path $TargetDist) {
         Rename-Item -Path $TargetDist -NewName (Split-Path $BackupDist -Leaf) -Force
     }
@@ -262,7 +273,7 @@ try {
         Write-Warning "Error during build rollback: $_"
     }
 
-    # Guarded cleanup: lock file release
+    # Guarded cleanup: release and dispose build lock
     try {
         if ($LockFile) {
             $LockFile.Close()
@@ -272,7 +283,7 @@ try {
         Write-Warning "Error disposing build lock: $_"
     }
 
-    # Guarded cleanup: lock file removal
+    # Guarded cleanup: best-effort removal of project lock file
     try {
         if (Test-Path -LiteralPath $LockFilePath) {
             Remove-Item -LiteralPath $LockFilePath -Force -ErrorAction SilentlyContinue

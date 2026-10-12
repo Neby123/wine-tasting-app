@@ -21,9 +21,9 @@ try {
     $curlArgs = @("-s", "-o", "NUL", "-w", "%{http_code}", "--retry", "2", "--max-time", "15")
 
     if ($ApiKey) {
-        # Validate format: prevent curl config injection
-        if ($ApiKey -notmatch '^[A-Za-z0-9._-]+$') {
-            Write-Host "SECURITY ERROR: ApiKey contains invalid characters. Must be a valid alphanumeric token." -ForegroundColor Red
+        # Validate format: prevent curl config injection with strict \A...\z anchors (rejects trailing newlines)
+        if ($ApiKey -notmatch '\A[A-Za-z0-9._-]+\z') {
+            Write-Host "SECURITY ERROR: ApiKey contains invalid characters or newlines. Must be a valid alphanumeric token." -ForegroundColor Red
             exit 1
         }
 
@@ -56,8 +56,18 @@ try {
         Write-Host "Pinging Supabase database with authentication ($ProjectRef)..." -ForegroundColor Cyan
         $Url = "https://$ProjectRef.supabase.co/rest/v1/sessions?select=id&limit=1"
         
-        # Write headers to a short-lived config file in user TEMP to prevent passing API keys in process argv
+        # Create short-lived config file with owner-only ACL to protect secret material
         $TempConfigFile = Join-Path $env:TEMP ("curl_keepalive_" + [guid]::NewGuid().ToString("N") + ".cfg")
+        $FileStream = [System.IO.File]::Create($TempConfigFile)
+        $FileStream.Close()
+
+        $CurrentUser = [System.Security.Principal.WindowsIdentity]::GetCurrent().Name
+        $FileAcl = New-Object System.Security.AccessControl.FileSecurity
+        $OwnerRule = New-Object System.Security.AccessControl.FileSystemAccessRule($CurrentUser, "FullControl", "Allow")
+        $FileAcl.SetAccessRuleProtection($true, $false) # Strip inherited permissions
+        $FileAcl.SetAccessRule($OwnerRule)
+        (Get-Item -LiteralPath $TempConfigFile).SetAccessControl($FileAcl)
+
         $ConfigLines = @(
             "header = ""apikey: $ApiKey"""
             "header = ""Authorization: Bearer $ApiKey"""
@@ -112,6 +122,10 @@ try {
     }
 } finally {
     if ($TempConfigFile -and (Test-Path -LiteralPath $TempConfigFile)) {
+        try {
+            # Zero out secret content before deletion
+            [System.IO.File]::WriteAllBytes($TempConfigFile, [byte[]]::new(256))
+        } catch { }
         Remove-Item -LiteralPath $TempConfigFile -Force -ErrorAction SilentlyContinue
     }
 }
