@@ -36,7 +36,11 @@ jobs:
           echo "HTTP Response Status Code: $STATUS"
           
           if [ "$STATUS" = "200" ] || [ "$STATUS" = "206" ]; then
-            echo "SUCCESS: Authenticated database query completed! Activity timer reset."
+            if [ -n "$ANON_KEY" ]; then
+              echo "SUCCESS: Authenticated database query completed! Activity timer reset."
+            else
+              echo "SUCCESS: Unauthenticated gateway ping completed (HTTP $STATUS)."
+            fi
           elif [ "$STATUS" = "401" ]; then
             if [ -n "$ANON_KEY" ]; then
               echo "ERROR: SUPABASE_ANON_KEY secret was provided but rejected by Supabase (HTTP 401 Unauthorized). Verify repository secret."

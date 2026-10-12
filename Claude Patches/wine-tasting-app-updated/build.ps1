@@ -6,6 +6,7 @@ $ErrorActionPreference = "Stop"
 
 $ProjectDir = $PSScriptRoot
 if (-not $ProjectDir) { $ProjectDir = (Get-Location).Path }
+$ProjectDirCanonical = [System.IO.Path]::GetFullPath($ProjectDir).TrimEnd('\', '/') + [System.IO.Path]::DirectorySeparatorChar
 
 # Local lockfile in TEMP derived from project path hash (prevents Google Drive cloud sync locks)
 $ProjectBytes = [System.Text.Encoding]::UTF8.GetBytes($ProjectDir.ToLowerInvariant())
@@ -42,30 +43,50 @@ $StagingDist = Join-Path $ProjectDir "dist_staging_$BuildGuid"
 $BackupDist = Join-Path $ProjectDir "dist_backup_$BuildTimestamp"
 $TargetDist = Join-Path $ProjectDir "dist"
 
-# Safe folder deletion helper: enforces project root containment and avoids following reparse points (symlinks/junctions)
+# Safe folder deletion helper: enforces strict project root containment and guards against following reparse points (symlinks/junctions)
 function Remove-SafeStagingFolder([string]$FolderPath) {
     if (-not (Test-Path -LiteralPath $FolderPath)) { return }
-    $Item = Get-Item -LiteralPath $FolderPath -Force -ErrorAction SilentlyContinue
-    if (-not $Item) { return }
-
-    $CanonicalPath = $Item.FullName
-    if (-not $CanonicalPath.StartsWith($ProjectDir, [System.StringComparison]::OrdinalIgnoreCase)) {
+    $CanonicalPath = [System.IO.Path]::GetFullPath($FolderPath)
+    if (-not $CanonicalPath.StartsWith($ProjectDirCanonical, [System.StringComparison]::OrdinalIgnoreCase)) {
         Write-Warning "Refusing to delete path outside project root: $CanonicalPath"
         return
     }
 
-    # Reject reparse points (symlinks or directory junctions) to prevent target tree deletion
-    if (($Item.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) {
-        Write-Warning "Refusing to traverse reparse point: $CanonicalPath"
-        Remove-Item -LiteralPath $CanonicalPath -Force -ErrorAction SilentlyContinue
+    # Inspect the directory tree for any reparse points before attempting deletion
+    $TopItem = Get-Item -LiteralPath $CanonicalPath -Force -ErrorAction SilentlyContinue
+    if (-not $TopItem) { return }
+
+    $HasReparsePoints = ($TopItem.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0
+    if (-not $HasReparsePoints) {
+        $ChildReparse = Get-ChildItem -LiteralPath $CanonicalPath -Recurse -Force -ErrorAction SilentlyContinue | Where-Object {
+            ($_.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0
+        }
+        if ($ChildReparse) { $HasReparsePoints = $true }
+    }
+
+    if ($HasReparsePoints) {
+        Write-Warning "Reparse point detected in $CanonicalPath. Safely removing link without recursing into target..."
+        # On Windows, cmd rmdir deletes directory junctions without deleting the contents of the target folder
+        cmd /c rmdir "$CanonicalPath" 2>&1 | Out-Null
         return
     }
 
-    Remove-Item -LiteralPath $CanonicalPath -Recurse -Force -ErrorAction SilentlyContinue
+    # Safe native non-traversing recursive removal
+    cmd /c rmdir /s /q "$CanonicalPath" 2>&1 | Out-Null
+    if (Test-Path -LiteralPath $CanonicalPath) {
+        Remove-Item -LiteralPath $CanonicalPath -Recurse -Force -ErrorAction SilentlyContinue
+    }
 }
 
 # Outer try/finally guarantees the lock file stream is ALWAYS closed and disposed
 try {
+    # Startup sweep: Clean stale temporary build folders in TEMP from previous interrupted runs (older than 1 hour)
+    Get-ChildItem -LiteralPath $env:TEMP -Filter "wine-tasting-build-*" -Directory -ErrorAction SilentlyContinue | ForEach-Object {
+        if ($_.LastWriteTime -lt (Get-Date).AddHours(-1)) {
+            Remove-Item -LiteralPath $_.FullName -Recurse -Force -ErrorAction SilentlyContinue
+        }
+    }
+
     # Startup sweep: Clean or recover any orphaned staging/backup folders from previous interrupted runs
     $StaleBackups = Get-ChildItem -LiteralPath $ProjectDir -Filter "dist_backup_*" -Directory -ErrorAction SilentlyContinue
     if ((-not (Test-Path $TargetDist)) -and $StaleBackups) {
@@ -116,10 +137,14 @@ try {
     }
     Copy-Item -Path $ProjectLockFile -Destination (Join-Path $BuildDir "package-lock.json") -Force
 
-    # Copy local environment file if present to make sure VITE_* environment variables are baked in
+    # Copy ONLY frontend VITE_* environment variables into the isolated build folder to prevent secret exposure
     $LocalEnv = Join-Path $ProjectDir ".env"
     if (Test-Path $LocalEnv) {
-        Copy-Item -Path $LocalEnv -Destination (Join-Path $BuildDir ".env") -Force
+        $ViteEnvLines = Get-Content -LiteralPath $LocalEnv | Where-Object { $_ -match '^\s*VITE_' }
+        if ($ViteEnvLines) {
+            $TargetEnv = Join-Path $BuildDir ".env"
+            [System.IO.File]::WriteAllLines($TargetEnv, $ViteEnvLines)
+        }
     }
     
     Copy-Item -Path (Join-Path $ProjectDir "vite.config.ts") -Destination (Join-Path $BuildDir "vite.config.ts") -Force

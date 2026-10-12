@@ -21,10 +21,36 @@ try {
     $curlArgs = @("-s", "-o", "NUL", "-w", "%{http_code}", "--retry", "2", "--max-time", "15")
 
     if ($ApiKey) {
+        # Validate format: prevent curl config injection
+        if ($ApiKey -notmatch '^[A-Za-z0-9._-]+$') {
+            Write-Host "SECURITY ERROR: ApiKey contains invalid characters. Must be a valid JWT token." -ForegroundColor Red
+            exit 1
+        }
+
+        # Guard against service_role key leakage: decode JWT payload role claim
+        $TokenParts = $ApiKey.Split('.')
+        if ($TokenParts.Length -ge 2) {
+            try {
+                $Base64Payload = $TokenParts[1].Replace('-', '+').Replace('_', '/')
+                switch ($Base64Payload.Length % 4) {
+                    2 { $Base64Payload += "==" }
+                    3 { $Base64Payload += "=" }
+                }
+                $PayloadBytes = [System.Convert]::FromBase64String($Base64Payload)
+                $PayloadJson = [System.Text.Encoding]::UTF8.GetString($PayloadBytes)
+                if ($PayloadJson -match '"role"\s*:\s*"service_role"') {
+                    Write-Host "SECURITY ERROR: service_role key detected. Refusing to execute keepalive with administrative key. Provide anon key only." -ForegroundColor Red
+                    exit 1
+                }
+            } catch {
+                # Non-standard JWT formatting; continue with character validation
+            }
+        }
+
         Write-Host "Pinging Supabase database with authentication ($ProjectRef)..." -ForegroundColor Cyan
         $Url = "https://$ProjectRef.supabase.co/rest/v1/sessions?select=id&limit=1"
         
-        # Write headers to a short-lived config file to prevent passing API keys in process argv
+        # Write headers to a short-lived config file in user TEMP to prevent passing API keys in process argv
         $TempConfigFile = Join-Path $env:TEMP ("curl_keepalive_" + [guid]::NewGuid().ToString("N") + ".cfg")
         $ConfigLines = @(
             "header = ""apikey: $ApiKey"""
@@ -53,7 +79,11 @@ try {
     Write-Host "Supabase API Response Status Code: $httpCode" -ForegroundColor Yellow
 
     if ($httpCode -ge 200 -and $httpCode -lt 300) {
-        Write-Host "SUCCESS: Database query confirmed (HTTP $httpCode). Project activity timer reset." -ForegroundColor Green
+        if ($ApiKey) {
+            Write-Host "SUCCESS: Authenticated database query confirmed (HTTP $httpCode). Project activity timer reset." -ForegroundColor Green
+        } else {
+            Write-Host "SUCCESS: Gateway ping confirmed (HTTP $httpCode)." -ForegroundColor Green
+        }
         exit 0
     } elseif ($httpCode -eq "401") {
         if ($ApiKey) {
@@ -69,7 +99,7 @@ try {
         exit 1
     }
 } finally {
-    if ($TempConfigFile -and (Test-Path $TempConfigFile)) {
-        Remove-Item -Path $TempConfigFile -Force -ErrorAction SilentlyContinue
+    if ($TempConfigFile -and (Test-Path -LiteralPath $TempConfigFile)) {
+        Remove-Item -LiteralPath $TempConfigFile -Force -ErrorAction SilentlyContinue
     }
 }
