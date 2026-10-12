@@ -7,13 +7,17 @@ $ErrorActionPreference = "Stop"
 $ProjectDir = $PSScriptRoot
 if (-not $ProjectDir) { $ProjectDir = (Get-Location).Path }
 
-$LockFilePath = Join-Path $ProjectDir ".build.lock"
+# Local lockfile in TEMP derived from project path hash (prevents Google Drive cloud sync locks)
+$ProjectBytes = [System.Text.Encoding]::UTF8.GetBytes($ProjectDir.ToLowerInvariant())
+$Hasher = [System.Security.Cryptography.SHA256]::Create()
+$ProjectHash = [System.BitConverter]::ToString($Hasher.ComputeHash($ProjectBytes)).Replace("-", "").Substring(0, 16)
+$LockFilePath = Join-Path $env:TEMP "wine_tasting_build_$ProjectHash.lock"
 $LockFile = $null
 
 try {
     $LockFile = [System.IO.File]::Open($LockFilePath, [System.IO.FileMode]::OpenOrCreate, [System.IO.FileAccess]::ReadWrite, [System.IO.FileShare]::None)
 } catch [System.IO.IOException] {
-    Write-Host "Another build is in progress on this project. Waiting for lock..." -ForegroundColor Yellow
+    Write-Host "Another build is in progress for this project. Waiting for lock..." -ForegroundColor Yellow
     $Retries = 0
     while ($Retries -lt 30) {
         Start-Sleep -Seconds 2
@@ -37,23 +41,48 @@ $StagingDist = Join-Path $ProjectDir "dist_staging_$BuildGuid"
 $BackupDist = Join-Path $ProjectDir "dist_backup_$BuildGuid"
 $TargetDist = Join-Path $ProjectDir "dist"
 
+# Outer try/finally guarantees the lock file stream is ALWAYS closed and disposed
 try {
+    # Startup sweep: Clean or recover any orphaned staging/backup folders from previous interrupted runs
+    $StaleBackups = Get-ChildItem -Path $ProjectDir -Filter "dist_backup_*" -Directory -ErrorAction SilentlyContinue
+    if ((-not (Test-Path $TargetDist)) -and $StaleBackups) {
+        $MostRecentBackup = $StaleBackups | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+        if ($MostRecentBackup) {
+            Write-Host "Recovering orphaned distribution backup from interrupted previous run..." -ForegroundColor Yellow
+            Rename-Item -Path $MostRecentBackup.FullName -NewName (Split-Path $TargetDist -Leaf) -Force
+        }
+    }
+    Get-ChildItem -Path $ProjectDir -Filter "dist_staging_*" -Directory -ErrorAction SilentlyContinue | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
+    Get-ChildItem -Path $ProjectDir -Filter "dist_backup_*" -Directory -ErrorAction SilentlyContinue | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
+
+    # Generate unique isolated temporary build directory
     $BuildDir = Join-Path $env:TEMP "wine-tasting-build-$BuildGuid"
 
-    $NodePortable = Join-Path (Split-Path (Split-Path (Split-Path $ProjectDir -Parent) -Parent) -Parent) "node-portable"
+    # Locate Node/npm (prioritize system PATH, fallback to portable Node candidates)
+    $SystemNpm = Get-Command npm.cmd, npm -ErrorAction SilentlyContinue | Select-Object -First 1
     $NpmCmd = ""
-    if (Test-Path (Join-Path $NodePortable "npm.cmd")) {
-        $NpmCmd = Join-Path $NodePortable "npm.cmd"
-        $NodeExe = Join-Path $NodePortable "node.exe"
-        if (Test-Path $NodeExe) {
-            $env:PATH = "$NodePortable;$env:PATH"
-        }
+    if ($SystemNpm) {
+        $NpmCmd = $SystemNpm.Source
     } else {
-        $SystemNpm = Get-Command npm.cmd, npm -ErrorAction SilentlyContinue | Select-Object -First 1
-        if ($SystemNpm) {
-            $NpmCmd = $SystemNpm.Source
-        } else {
-            throw "npm command could not be located in portable directory or system PATH."
+        $CandidatePaths = @(
+            Join-Path $ProjectDir "node-portable",
+            Join-Path (Split-Path $ProjectDir -Parent) "node-portable",
+            Join-Path (Split-Path (Split-Path $ProjectDir -Parent) -Parent) "node-portable",
+            Join-Path (Split-Path (Split-Path (Split-Path $ProjectDir -Parent) -Parent) -Parent) "node-portable"
+        )
+        foreach ($Candidate in $CandidatePaths) {
+            $PortableNpm = Join-Path $Candidate "npm.cmd"
+            if (Test-Path $PortableNpm) {
+                $NpmCmd = $PortableNpm
+                $NodeExe = Join-Path $Candidate "node.exe"
+                if (Test-Path $NodeExe) {
+                    $env:PATH = "$Candidate;$env:PATH"
+                }
+                break
+            }
+        }
+        if (-not $NpmCmd) {
+            throw "npm command could not be located in system PATH or portable directory."
         }
     }
 
@@ -82,10 +111,11 @@ try {
 
     Write-Host "3. Installing dependencies in local build folder..." -ForegroundColor Cyan
     Set-Location $BuildDir
+    # Install dependencies with --ignore-scripts to eliminate arbitrary lifecycle script execution
     if ($HasLockFile) {
-        & $NpmCmd ci --no-audit --no-fund
+        & $NpmCmd ci --ignore-scripts --no-audit --no-fund
     } else {
-        & $NpmCmd install --no-audit --no-fund
+        & $NpmCmd install --ignore-scripts --no-audit --no-fund
     }
     if ($LASTEXITCODE -ne 0) {
         throw "Dependency installation failed with exit code $LASTEXITCODE"
@@ -105,14 +135,16 @@ try {
 
     Set-Location $OriginalLocation
 
-    Write-Host "5. Publishing verified distribution atomically..." -ForegroundColor Cyan
+    Write-Host "5. Publishing verified distribution..." -ForegroundColor Cyan
     Copy-Item -Path $CompiledDist -Destination $StagingDist -Recurse -Force
 
+    # Swap distribution directory
     if (Test-Path $TargetDist) {
         Rename-Item -Path $TargetDist -NewName (Split-Path $BackupDist -Leaf) -Force
     }
     Rename-Item -Path $StagingDist -NewName (Split-Path $TargetDist -Leaf) -Force
 
+    # Remove backup once publish has verified
     if (Test-Path $BackupDist) {
         Remove-Item -Path $BackupDist -Recurse -Force -ErrorAction SilentlyContinue
     }
@@ -126,6 +158,7 @@ finally {
         Remove-Item $BuildDir -Recurse -Force -ErrorAction SilentlyContinue
     }
 
+    # If build failed before clean completion, roll back from backup if target is missing
     if (-not $BuildSucceeded) {
         if (Test-Path $StagingDist) {
             Remove-Item $StagingDist -Recurse -Force -ErrorAction SilentlyContinue
@@ -135,9 +168,13 @@ finally {
         }
     }
 
+    # Release file lock (OS cleans up the file handle)
     if ($LockFile) {
         $LockFile.Close()
         $LockFile.Dispose()
+    }
+    if (Test-Path $LockFilePath) {
+        Remove-Item -Path $LockFilePath -Force -ErrorAction SilentlyContinue
     }
 }
 

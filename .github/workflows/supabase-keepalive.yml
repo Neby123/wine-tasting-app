@@ -35,13 +35,14 @@ jobs:
           STATUS="${RAW_STATUS:-000}"
           echo "HTTP Response Status Code: $STATUS"
           
-          if [ "$STATUS" -eq 200 ] || [ "$STATUS" -eq 206 ]; then
+          if [ "$STATUS" = "200" ] || [ "$STATUS" = "206" ]; then
             echo "SUCCESS: Authenticated database query completed! Activity timer reset."
-          elif [ "$STATUS" -eq 401 ]; then
+          elif [ "$STATUS" = "401" ]; then
             echo "GATEWAY ACTIVE: Inbound traffic recorded by Supabase REST gateway (HTTP 401). Set SUPABASE_ANON_KEY secret for authenticated table queries."
-          elif [ "$STATUS" -eq 000 ]; then
-            echo "ERROR: Failed to establish network connection or resolve host."
+          elif [ "$STATUS" = "000" ]; then
+            echo "ERROR: Failed to establish network connection or resolve host (Supabase project may be paused in dashboard)."
             exit 1
           else
             echo "NOTICE: Inbound ping completed with status HTTP $STATUS."
           fi
+

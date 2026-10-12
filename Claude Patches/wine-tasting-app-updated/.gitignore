@@ -39,3 +39,9 @@ yarn-error.log*
 # OS files
 .DS_Store
 Thumbs.db
+
+# Build temporary artifacts and lock files
+*.lock
+dist_staging_*
+dist_backup_*
+
