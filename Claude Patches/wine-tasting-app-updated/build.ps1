@@ -7,39 +7,37 @@ $ErrorActionPreference = "Stop"
 $ProjectDir = $PSScriptRoot
 if (-not $ProjectDir) { $ProjectDir = (Get-Location).Path }
 
-$LockFilePath = Join-Path $env:TEMP "wine_tasting_build.lock"
+$LockFilePath = Join-Path $ProjectDir ".build.lock"
 $LockFile = $null
 
 try {
     $LockFile = [System.IO.File]::Open($LockFilePath, [System.IO.FileMode]::OpenOrCreate, [System.IO.FileAccess]::ReadWrite, [System.IO.FileShare]::None)
-} catch {
-    Write-Host "Another build is currently in progress. Waiting for lock..." -ForegroundColor Yellow
+} catch [System.IO.IOException] {
+    Write-Host "Another build is in progress on this project. Waiting for lock..." -ForegroundColor Yellow
     $Retries = 0
     while ($Retries -lt 30) {
         Start-Sleep -Seconds 2
         try {
             $LockFile = [System.IO.File]::Open($LockFilePath, [System.IO.FileMode]::OpenOrCreate, [System.IO.FileAccess]::ReadWrite, [System.IO.FileShare]::None)
             break
-        } catch {
+        } catch [System.IO.IOException] {
             $Retries++
         }
     }
     if (-not $LockFile) {
-        throw "Could not acquire build lock after 60 seconds. Aborting concurrent build."
+        throw "Could not acquire project build lock after 60 seconds. Aborting concurrent build."
     }
 }
 
 $OriginalLocation = Get-Location
 $BuildSucceeded = $false
 $BuildDir = $null
+$BuildGuid = [guid]::NewGuid().ToString("N")
+$StagingDist = Join-Path $ProjectDir "dist_staging_$BuildGuid"
+$BackupDist = Join-Path $ProjectDir "dist_backup_$BuildGuid"
+$TargetDist = Join-Path $ProjectDir "dist"
 
 try {
-    $TargetDist = Join-Path $ProjectDir "dist"
-
-    Get-ChildItem -Path $ProjectDir -Filter "dist_staging_*" -Directory -ErrorAction SilentlyContinue | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
-    Get-ChildItem -Path $ProjectDir -Filter "dist_backup_*" -Directory -ErrorAction SilentlyContinue | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
-
-    $BuildGuid = [guid]::NewGuid().ToString("N")
     $BuildDir = Join-Path $env:TEMP "wine-tasting-build-$BuildGuid"
 
     $NodePortable = Join-Path (Split-Path (Split-Path (Split-Path $ProjectDir -Parent) -Parent) -Parent) "node-portable"
@@ -107,19 +105,16 @@ try {
 
     Set-Location $OriginalLocation
 
-    Write-Host "5. Updating distribution files in Google Drive in-place..." -ForegroundColor Cyan
-    if (-not (Test-Path $TargetDist)) {
-        New-Item -ItemType Directory -Path $TargetDist -Force | Out-Null
-    }
+    Write-Host "5. Publishing verified distribution atomically..." -ForegroundColor Cyan
+    Copy-Item -Path $CompiledDist -Destination $StagingDist -Recurse -Force
 
-    $RoboExe = Get-Command robocopy.exe, robocopy -ErrorAction SilentlyContinue | Select-Object -First 1
-    if ($RoboExe) {
-        & $RoboExe.Source "$CompiledDist" "$TargetDist" /MIR /R:1 /W:1 /NP /NFL /NDL /NJH /NJS | Out-Null
-        if ($LASTEXITCODE -ge 8) {
-            throw "robocopy mirror failed with exit code $LASTEXITCODE"
-        }
-    } else {
-        Copy-Item -Path "$CompiledDist\*" -Destination $TargetDist -Recurse -Force
+    if (Test-Path $TargetDist) {
+        Rename-Item -Path $TargetDist -NewName (Split-Path $BackupDist -Leaf) -Force
+    }
+    Rename-Item -Path $StagingDist -NewName (Split-Path $TargetDist -Leaf) -Force
+
+    if (Test-Path $BackupDist) {
+        Remove-Item -Path $BackupDist -Recurse -Force -ErrorAction SilentlyContinue
     }
 
     $BuildSucceeded = $true
@@ -131,17 +126,25 @@ finally {
         Remove-Item $BuildDir -Recurse -Force -ErrorAction SilentlyContinue
     }
 
+    if (-not $BuildSucceeded) {
+        if (Test-Path $StagingDist) {
+            Remove-Item $StagingDist -Recurse -Force -ErrorAction SilentlyContinue
+        }
+        if ((Test-Path $BackupDist) -and (-not (Test-Path $TargetDist))) {
+            Rename-Item -Path $BackupDist -NewName (Split-Path $TargetDist -Leaf) -Force
+        }
+    }
+
     if ($LockFile) {
         $LockFile.Close()
         $LockFile.Dispose()
-        Remove-Item $LockFilePath -Force -ErrorAction SilentlyContinue
     }
 }
 
 if ($BuildSucceeded) {
     Write-Host "-----------------------------------------" -ForegroundColor Green
     Write-Host "SUCCESS: Build complete! Verified distribution files in:" -ForegroundColor Green
-    Write-Host (Join-Path $ProjectDir "dist") -ForegroundColor White
+    Write-Host $TargetDist -ForegroundColor White
     Write-Host "=========================================" -ForegroundColor Green
 } else {
     Write-Host "BUILD FAILED: See error log above." -ForegroundColor Red

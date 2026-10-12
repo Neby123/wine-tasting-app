@@ -2,7 +2,7 @@ name: Supabase Keepalive Ping
 
 on:
   schedule:
-    # Runs every 3 days at 12:00 UTC to maintain project activity
+    # Runs periodically to maintain project activity
     - cron: '0 12 */3 * *'
   workflow_dispatch:
 
@@ -23,8 +23,7 @@ jobs:
             echo "Authenticated mode: Querying sessions table with repository secret..."
             RAW_STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
               --retry 3 --retry-delay 5 --max-time 15 \
-              -H "apikey: $ANON_KEY" \
-              -H "Authorization: Bearer $ANON_KEY" \
+              -K <(printf 'header = "apikey: %s"\nheader = "Authorization: Bearer %s"\n' "$ANON_KEY" "$ANON_KEY") \
               "https://rprjfaxsmwdzqwzycujh.supabase.co/rest/v1/sessions?select=id&limit=1" || true)
           else
             echo "Unauthenticated gateway mode: Pinging REST API endpoint..."
@@ -39,7 +38,7 @@ jobs:
           if [ "$STATUS" -eq 200 ] || [ "$STATUS" -eq 206 ]; then
             echo "SUCCESS: Authenticated database query completed! Activity timer reset."
           elif [ "$STATUS" -eq 401 ]; then
-            echo "SUCCESS: Inbound traffic recorded by Supabase REST gateway (HTTP 401). Set SUPABASE_ANON_KEY secret for authenticated table queries."
+            echo "GATEWAY ACTIVE: Inbound traffic recorded by Supabase REST gateway (HTTP 401). Set SUPABASE_ANON_KEY secret for authenticated table queries."
           elif [ "$STATUS" -eq 000 ]; then
             echo "ERROR: Failed to establish network connection or resolve host."
             exit 1
