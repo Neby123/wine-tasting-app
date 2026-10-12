@@ -9,6 +9,7 @@ if (-not $ProjectDir) { $ProjectDir = (Get-Location).Path }
 
 $LockFilePath = Join-Path $env:TEMP "wine_tasting_build.lock"
 $LockFile = $null
+
 try {
     $LockFile = [System.IO.File]::Open($LockFilePath, [System.IO.FileMode]::OpenOrCreate, [System.IO.FileAccess]::ReadWrite, [System.IO.FileShare]::None)
 } catch {
@@ -28,46 +29,40 @@ try {
     }
 }
 
-$StaleBackups = Get-ChildItem -Path $ProjectDir -Filter "dist_backup_*" -Directory -ErrorAction SilentlyContinue
-$TargetDist = Join-Path $ProjectDir "dist"
-
-if (-not (Test-Path $TargetDist) -and $StaleBackups) {
-    $MostRecentBackup = $StaleBackups | Sort-Object LastWriteTime -Descending | Select-Object -First 1
-    if ($MostRecentBackup) {
-        Rename-Item -Path $MostRecentBackup.FullName -NewName "dist" -Force
-    }
-}
-Get-ChildItem -Path $ProjectDir -Filter "dist_staging_*" -Directory -ErrorAction SilentlyContinue | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
-Get-ChildItem -Path $ProjectDir -Filter "dist_backup_*" -Directory -ErrorAction SilentlyContinue | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
-
-$BuildGuid = [guid]::NewGuid().ToString("N")
-$BuildDir = Join-Path $env:TEMP "wine-tasting-build-$BuildGuid"
-
-$NodePortable = Join-Path (Split-Path (Split-Path (Split-Path $ProjectDir -Parent) -Parent) -Parent) "node-portable"
-$NpmCmd = ""
-if (Test-Path (Join-Path $NodePortable "npm.cmd")) {
-    $NpmCmd = Join-Path $NodePortable "npm.cmd"
-    $NodeExe = Join-Path $NodePortable "node.exe"
-    if (Test-Path $NodeExe) {
-        $env:PATH = "$NodePortable;$env:PATH"
-    }
-} else {
-    $SystemNpm = Get-Command npm.cmd, npm -ErrorAction SilentlyContinue | Select-Object -First 1
-    if ($SystemNpm) {
-        $NpmCmd = $SystemNpm.Source
-    } else {
-        throw "npm command could not be located in portable directory or system PATH."
-    }
-}
-
-Write-Host "=========================================" -ForegroundColor Yellow
-Write-Host "   Wine Tasting Web App Compilation" -ForegroundColor Yellow
-Write-Host "=========================================" -ForegroundColor Yellow
-
 $OriginalLocation = Get-Location
 $BuildSucceeded = $false
+$BuildDir = $null
 
 try {
+    $TargetDist = Join-Path $ProjectDir "dist"
+
+    Get-ChildItem -Path $ProjectDir -Filter "dist_staging_*" -Directory -ErrorAction SilentlyContinue | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
+    Get-ChildItem -Path $ProjectDir -Filter "dist_backup_*" -Directory -ErrorAction SilentlyContinue | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
+
+    $BuildGuid = [guid]::NewGuid().ToString("N")
+    $BuildDir = Join-Path $env:TEMP "wine-tasting-build-$BuildGuid"
+
+    $NodePortable = Join-Path (Split-Path (Split-Path (Split-Path $ProjectDir -Parent) -Parent) -Parent) "node-portable"
+    $NpmCmd = ""
+    if (Test-Path (Join-Path $NodePortable "npm.cmd")) {
+        $NpmCmd = Join-Path $NodePortable "npm.cmd"
+        $NodeExe = Join-Path $NodePortable "node.exe"
+        if (Test-Path $NodeExe) {
+            $env:PATH = "$NodePortable;$env:PATH"
+        }
+    } else {
+        $SystemNpm = Get-Command npm.cmd, npm -ErrorAction SilentlyContinue | Select-Object -First 1
+        if ($SystemNpm) {
+            $NpmCmd = $SystemNpm.Source
+        } else {
+            throw "npm command could not be located in portable directory or system PATH."
+        }
+    }
+
+    Write-Host "=========================================" -ForegroundColor Yellow
+    Write-Host "   Wine Tasting Web App Compilation" -ForegroundColor Yellow
+    Write-Host "=========================================" -ForegroundColor Yellow
+
     Write-Host "1. Creating isolated build folder at $BuildDir..." -ForegroundColor Cyan
     New-Item -ItemType Directory -Path $BuildDir -Force | Out-Null
 
@@ -112,19 +107,19 @@ try {
 
     Set-Location $OriginalLocation
 
-    Write-Host "5. Atomically updating distribution files in Google Drive..." -ForegroundColor Cyan
-    $StagingDist = Join-Path $ProjectDir "dist_staging_$BuildGuid"
-    $BackupDist = Join-Path $ProjectDir "dist_backup_$BuildGuid"
-
-    Copy-Item -Path $CompiledDist -Destination $StagingDist -Recurse -Force
-
-    if (Test-Path $TargetDist) {
-        Rename-Item -Path $TargetDist -NewName "dist_backup_$BuildGuid" -Force
+    Write-Host "5. Updating distribution files in Google Drive in-place..." -ForegroundColor Cyan
+    if (-not (Test-Path $TargetDist)) {
+        New-Item -ItemType Directory -Path $TargetDist -Force | Out-Null
     }
-    Rename-Item -Path $StagingDist -NewName "dist" -Force
 
-    if (Test-Path $BackupDist) {
-        Remove-Item -Path $BackupDist -Recurse -Force -ErrorAction SilentlyContinue
+    $RoboExe = Get-Command robocopy.exe, robocopy -ErrorAction SilentlyContinue | Select-Object -First 1
+    if ($RoboExe) {
+        & $RoboExe.Source "$CompiledDist" "$TargetDist" /MIR /R:1 /W:1 /NP /NFL /NDL /NJH /NJS | Out-Null
+        if ($LASTEXITCODE -ge 8) {
+            throw "robocopy mirror failed with exit code $LASTEXITCODE"
+        }
+    } else {
+        Copy-Item -Path "$CompiledDist\*" -Destination $TargetDist -Recurse -Force
     }
 
     $BuildSucceeded = $true
@@ -132,18 +127,8 @@ try {
 finally {
     Set-Location $OriginalLocation
     Write-Host "6. Cleaning up temporary build artifacts..." -ForegroundColor Cyan
-    if (Test-Path $BuildDir) {
+    if ($BuildDir -and (Test-Path $BuildDir)) {
         Remove-Item $BuildDir -Recurse -Force -ErrorAction SilentlyContinue
-    }
-    if (-not $BuildSucceeded) {
-        $StagingDist = Join-Path $ProjectDir "dist_staging_$BuildGuid"
-        $BackupDist = Join-Path $ProjectDir "dist_backup_$BuildGuid"
-        if (Test-Path $StagingDist) {
-            Remove-Item $StagingDist -Recurse -Force -ErrorAction SilentlyContinue
-        }
-        if ((Test-Path $BackupDist) -and (-not (Test-Path (Join-Path $ProjectDir "dist")))) {
-            Rename-Item -Path $BackupDist -NewName "dist" -Force
-        }
     }
 
     if ($LockFile) {
