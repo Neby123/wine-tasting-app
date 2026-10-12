@@ -1,7 +1,7 @@
 # build.ps1 - Compiles the app using a local C: directory to bypass Google Drive sync locks
 $ProjectDir = $PSScriptRoot
 if (-not $ProjectDir) { $ProjectDir = Get-Location }
-$BuildDir = "C:\Users\Bonica\wine-tasting-app-build"
+$BuildDir = Join-Path $env:TEMP "wine-tasting-app-build"
 $NodePortable = Resolve-Path "$ProjectDir\..\node-portable"
 
 # Add portable Node.js to path so npm sub-processes and scripts can execute successfully
