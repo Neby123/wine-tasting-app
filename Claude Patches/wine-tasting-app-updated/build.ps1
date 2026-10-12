@@ -7,6 +7,7 @@ $ErrorActionPreference = "Stop"
 $ProjectDir = $PSScriptRoot
 if (-not $ProjectDir) { $ProjectDir = (Get-Location).Path }
 $ProjectDirCanonical = [System.IO.Path]::GetFullPath($ProjectDir).TrimEnd('\', '/') + [System.IO.Path]::DirectorySeparatorChar
+$TempDirCanonical = [System.IO.Path]::GetFullPath($env:TEMP).TrimEnd('\', '/') + [System.IO.Path]::DirectorySeparatorChar
 
 # Local lockfile in TEMP derived from canonical project path hash (prevents Google Drive cloud sync locks)
 $ProjectBytes = [System.Text.Encoding]::UTF8.GetBytes($ProjectDirCanonical.ToLowerInvariant())
@@ -62,16 +63,23 @@ function Remove-SafeStagingFolder([string]$FolderPath) {
         return
     }
 
-    # Stack-based breadth-first walk to detect and unlink reparse points before descending
+    # Stack-based walk to detect and unlink reparse points before descending
     $Stack = New-Object System.Collections.Generic.Stack[System.IO.DirectoryInfo]
     $DirsToDelete = New-Object System.Collections.Generic.List[System.IO.DirectoryInfo]
     $Stack.Push($DirInfo)
 
     while ($Stack.Count -gt 0) {
         $Current = $Stack.Pop()
+        $Current.Refresh()
+        if (($Current.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) {
+            Write-Warning "Reparse point detected on ($($Current.FullName)). Safely unlinking without traversal..."
+            $Current.Delete($false)
+            continue
+        }
         $DirsToDelete.Add($Current)
 
         foreach ($Sub in $Current.GetDirectories()) {
+            $Sub.Refresh()
             if (($Sub.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) {
                 Write-Warning "Reparse point detected inside $CanonicalPath ($($Sub.FullName)). Safely unlinking without traversal..."
                 $Sub.Delete($false)
@@ -90,26 +98,75 @@ function Remove-SafeStagingFolder([string]$FolderPath) {
     }
 }
 
+# Safe deletion for temporary build folders in TEMP with strict prefix containment
+function Remove-SafeTempFolder([string]$FolderPath) {
+    if (-not (Test-Path -LiteralPath $FolderPath)) { return }
+    $CanonicalPath = [System.IO.Path]::GetFullPath($FolderPath)
+    if (-not $CanonicalPath.StartsWith($TempDirCanonical, [System.StringComparison]::OrdinalIgnoreCase)) {
+        Write-Warning "Refusing to delete temp folder outside TEMP directory: $CanonicalPath"
+        return
+    }
+    $LeafName = [System.IO.Path]::GetFileName($CanonicalPath)
+    if (-not $LeafName.StartsWith("wine-tasting-build-$ProjectHash-", [System.StringComparison]::OrdinalIgnoreCase)) {
+        Write-Warning "Refusing to delete folder not matching project build prefix: $CanonicalPath"
+        return
+    }
+
+    $DirInfo = New-Object System.IO.DirectoryInfo($CanonicalPath)
+    if (-not $DirInfo.Exists) { return }
+
+    if (($DirInfo.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) {
+        $DirInfo.Delete($false)
+        return
+    }
+
+    $Stack = New-Object System.Collections.Generic.Stack[System.IO.DirectoryInfo]
+    $DirsToDelete = New-Object System.Collections.Generic.List[System.IO.DirectoryInfo]
+    $Stack.Push($DirInfo)
+
+    while ($Stack.Count -gt 0) {
+        $Current = $Stack.Pop()
+        $Current.Refresh()
+        if (($Current.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) {
+            $Current.Delete($false)
+            continue
+        }
+        $DirsToDelete.Add($Current)
+
+        foreach ($Sub in $Current.GetDirectories()) {
+            $Sub.Refresh()
+            if (($Sub.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) {
+                $Sub.Delete($false)
+            } else {
+                $Stack.Push($Sub)
+            }
+        }
+        foreach ($File in $Current.GetFiles()) {
+            $File.Delete()
+        }
+    }
+
+    for ($i = $DirsToDelete.Count - 1; $i -ge 0; $i--) {
+        $DirsToDelete[$i].Delete($false)
+    }
+}
+
 # Outer try/catch/finally guarantees lock disposal and proper error propagation
 try {
     # Startup sweep: Clean stale temporary build folders in TEMP belonging strictly to this project hash (older than 1 hour)
     Get-ChildItem -LiteralPath $env:TEMP -Filter "wine-tasting-build-$ProjectHash-*" -Directory -ErrorAction SilentlyContinue | ForEach-Object {
         if ($_.LastWriteTime -lt (Get-Date).AddHours(-1)) {
-            $TempFolder = $_.FullName
-            $Item = Get-Item -LiteralPath $TempFolder -Force -ErrorAction SilentlyContinue
-            if ($Item -and (($Item.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -eq 0)) {
-                try { Remove-SafeStagingFolder $TempFolder } catch { }
-            }
+            try { Remove-SafeTempFolder $_.FullName } catch { }
         }
     }
 
     # Startup sweep: Clean or recover any orphaned staging/backup folders from previous interrupted runs
     $StaleBackups = Get-ChildItem -LiteralPath $ProjectDir -Filter "dist_backup_*" -Directory -ErrorAction SilentlyContinue
-    if ((-not (Test-Path $TargetDist)) -and $StaleBackups) {
+    if ((-not (Test-Path -LiteralPath $TargetDist)) -and $StaleBackups) {
         $MostRecentBackup = $StaleBackups | Sort-Object Name -Descending | Select-Object -First 1
         if ($MostRecentBackup -and (($MostRecentBackup.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -eq 0)) {
             Write-Host "Recovering orphaned distribution backup from interrupted previous run ($($MostRecentBackup.Name))..." -ForegroundColor Yellow
-            Rename-Item -LiteralPath $MostRecentBackup.FullName -NewName (Split-Path $TargetDist -Leaf) -Force
+            Rename-Item -LiteralPath $MostRecentBackup.FullName -NewName ([System.IO.Path]::GetFileName($TargetDist)) -Force
         }
     }
 
@@ -142,38 +199,42 @@ try {
     Copy-Item -Path (Join-Path $ProjectDir "package.json") -Destination (Join-Path $BuildDir "package.json") -Force
     
     $ProjectLockFile = Join-Path $ProjectDir "package-lock.json"
-    if (-not (Test-Path $ProjectLockFile)) {
+    if (-not (Test-Path -LiteralPath $ProjectLockFile)) {
         throw "package-lock.json is required for deterministic and secure builds. Run 'npm install' to generate a verified lockfile before building."
     }
     Copy-Item -Path $ProjectLockFile -Destination (Join-Path $BuildDir "package-lock.json") -Force
 
-    # Copy ONLY frontend public VITE_* environment variables into the isolated build folder
+    # Enforce strict allowlist for frontend public VITE_* environment variables
     $LocalEnv = Join-Path $ProjectDir ".env"
-    if (Test-Path $LocalEnv) {
+    if (Test-Path -LiteralPath $LocalEnv) {
+        $AllowedFrontendVars = @('VITE_SUPABASE_URL', 'VITE_SUPABASE_ANON_KEY', 'VITE_APP_TITLE', 'VITE_APP_VERSION')
         $ViteEnvLines = @()
         Get-Content -LiteralPath $LocalEnv | ForEach-Object {
             $Line = $_.Trim()
             if ($Line -match '^VITE_') {
-                # Reject sensitive credential patterns from being bundled into client assets
-                if ($Line -match '(?i)(service_role|secret|sb_secret_|private|password|master|admin)') {
-                    throw "Security violation in .env: Sensitive keyword detected in frontend variable: $Line. High-privilege secrets must never be exposed via VITE_* variables."
+                $VarName = ($Line -split '=')[0].Trim()
+                if ($VarName -notin $AllowedFrontendVars) {
+                    throw "Security violation in .env: Unapproved frontend variable '$VarName'. Only explicitly permitted public frontend variables may be bundled."
                 }
-                # Check for JWT with service_role claim
-                if ($Line -match '(eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+)') {
-                    $Token = $Matches[1]
-                    $Parts = $Token.Split('.')
-                    if ($Parts.Length -ge 2) {
-                        $IsServiceRole = $false
+                # Inspect anon key value to ensure no elevated privileges are attached
+                if ($VarName -eq 'VITE_SUPABASE_ANON_KEY') {
+                    $VarValue = ($Line -split '=', 2)[1].Trim()
+                    if ($VarValue -match '(?i)(sb_secret_|service_role|master_key)') {
+                        throw "Security violation in .env: Sensitive key pattern detected in variable '$VarName'."
+                    }
+                    $TokenParts = $VarValue.Split('.')
+                    if ($TokenParts.Length -ge 2) {
+                        $IsAnonRole = $false
                         try {
-                            $B64 = $Parts[1].Replace('-', '+').Replace('_', '/')
+                            $B64 = $TokenParts[1].Replace('-', '+').Replace('_', '/')
                             switch ($B64.Length % 4) { 2 { $B64 += "==" } 3 { $B64 += "=" } }
                             $Payload = [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String($B64))
-                            if ($Payload -match '"role"\s*:\s*"service_role"') {
-                                $IsServiceRole = $true
+                            if ($Payload -match '"role"\s*:\s*"anon"') {
+                                $IsAnonRole = $true
                             }
                         } catch { }
-                        if ($IsServiceRole) {
-                            throw "Security violation in .env: Service role JWT detected in VITE_* variable: $Line"
+                        if (-not $IsAnonRole) {
+                            throw "Security violation in .env: JWT token in variable '$VarName' does not contain a verified anon role claim."
                         }
                     }
                 }
@@ -187,10 +248,10 @@ try {
     }
     
     # Optional assets
-    if (Test-Path (Join-Path $ProjectDir "public")) {
+    if (Test-Path -LiteralPath (Join-Path $ProjectDir "public")) {
         Copy-Item -Path (Join-Path $ProjectDir "public") -Destination (Join-Path $BuildDir "public") -Recurse -Force
     }
-    if (Test-Path (Join-Path $ProjectDir "tsconfig.node.json")) {
+    if (Test-Path -LiteralPath (Join-Path $ProjectDir "tsconfig.node.json")) {
         Copy-Item -Path (Join-Path $ProjectDir "tsconfig.node.json") -Destination (Join-Path $BuildDir "tsconfig.node.json") -Force
     }
 
@@ -216,7 +277,7 @@ try {
 
     $CompiledDist = Join-Path $BuildDir "dist"
     $CompiledIndex = Join-Path $CompiledDist "index.html"
-    if (-not (Test-Path $CompiledIndex)) {
+    if (-not (Test-Path -LiteralPath $CompiledIndex)) {
         throw "Verification failed: Compiled output index.html not found in $CompiledDist"
     }
 
@@ -226,16 +287,16 @@ try {
     Copy-Item -Path $CompiledDist -Destination $StagingDist -Recurse -Force
 
     # Swap distribution directory: target is backed up, staging is renamed to target
-    if (Test-Path $TargetDist) {
-        Rename-Item -Path $TargetDist -NewName (Split-Path $BackupDist -Leaf) -Force
+    if (Test-Path -LiteralPath $TargetDist) {
+        Rename-Item -LiteralPath $TargetDist -NewName ([System.IO.Path]::GetFileName($BackupDist)) -Force
     }
-    Rename-Item -Path $StagingDist -NewName (Split-Path $TargetDist -Leaf) -Force
+    Rename-Item -LiteralPath $StagingDist -NewName ([System.IO.Path]::GetFileName($TargetDist)) -Force
 
     # Output is now verified and active in target directory
     $BuildSucceeded = $true
 
     # Clean up backup folder without aborting successful build
-    if (Test-Path $BackupDist) {
+    if (Test-Path -LiteralPath $BackupDist) {
         try {
             Remove-SafeStagingFolder $BackupDist
         } catch {
@@ -253,7 +314,7 @@ try {
     # Guarded cleanup: temporary build directory
     try {
         if ($BuildDir -and (Test-Path -LiteralPath $BuildDir)) {
-            [System.IO.Directory]::Delete($BuildDir, $true)
+            Remove-SafeTempFolder $BuildDir
         }
     } catch {
         Write-Warning "Could not delete temporary build directory ($BuildDir): $_"
@@ -266,7 +327,7 @@ try {
                 Remove-SafeStagingFolder $StagingDist
             }
             if ((Test-Path -LiteralPath $BackupDist) -and (-not (Test-Path -LiteralPath $TargetDist))) {
-                Rename-Item -LiteralPath $BackupDist -NewName (Split-Path $TargetDist -Leaf) -Force
+                Rename-Item -LiteralPath $BackupDist -NewName ([System.IO.Path]::GetFileName($TargetDist)) -Force
             }
         }
     } catch {

@@ -33,9 +33,10 @@ try {
             exit 1
         }
 
-        # Guard against legacy JWT service_role keys
+        # Guard against legacy JWT service_role keys (fail-closed if token payload cannot be validated)
         $TokenParts = $ApiKey.Split('.')
         if ($TokenParts.Length -ge 2) {
+            $IsAnonRole = $false
             try {
                 $Base64Payload = $TokenParts[1].Replace('-', '+').Replace('_', '/')
                 switch ($Base64Payload.Length % 4) {
@@ -48,31 +49,46 @@ try {
                     Write-Host "SECURITY ERROR: service_role JWT claim detected. Refusing to execute keepalive with administrative key. Provide anon key only." -ForegroundColor Red
                     exit 1
                 }
+                if ($PayloadJson -match '"role"\s*:\s*"anon"') {
+                    $IsAnonRole = $true
+                }
             } catch {
-                # Non-standard JWT formatting; continue
+                Write-Host "SECURITY ERROR: Malformed JWT token payload. Cannot verify role claim." -ForegroundColor Red
+                exit 1
+            }
+            if (-not $IsAnonRole) {
+                Write-Host "SECURITY ERROR: Token does not contain an anon role claim. Refusing to execute." -ForegroundColor Red
+                exit 1
             }
         }
 
         Write-Host "Pinging Supabase database with authentication ($ProjectRef)..." -ForegroundColor Cyan
         $Url = "https://$ProjectRef.supabase.co/rest/v1/sessions?select=id&limit=1"
         
-        # Create short-lived config file with owner-only ACL to protect secret material
+        # Atomically create short-lived config file with owner-only access descriptor at file creation time
         $TempConfigFile = Join-Path $env:TEMP ("curl_keepalive_" + [guid]::NewGuid().ToString("N") + ".cfg")
-        $FileStream = [System.IO.File]::Create($TempConfigFile)
+        $CurrentUser = [System.Security.Principal.WindowsIdentity]::GetCurrent().Name
+        $FileSecurity = New-Object System.Security.AccessControl.FileSecurity
+        $OwnerRule = New-Object System.Security.AccessControl.FileSystemAccessRule($CurrentUser, "FullControl", "Allow")
+        $FileSecurity.SetAccessRuleProtection($true, $false) # Strip inherited permissions
+        $FileSecurity.SetAccessRule($OwnerRule)
+
+        $FileStream = New-Object System.IO.FileStream(
+            $TempConfigFile,
+            [System.IO.FileMode]::CreateNew,
+            [System.Security.AccessControl.FileSystemRights]::FullControl,
+            [System.IO.FileShare]::None,
+            4096,
+            [System.IO.FileOptions]::None,
+            $FileSecurity
+        )
+
+        $Writer = New-Object System.IO.StreamWriter($FileStream, [System.Text.Encoding]::ASCII)
+        $Writer.WriteLine("header = `"apikey: $ApiKey`"")
+        $Writer.WriteLine("header = `"Authorization: Bearer $ApiKey`"")
+        $Writer.Flush()
         $FileStream.Close()
 
-        $CurrentUser = [System.Security.Principal.WindowsIdentity]::GetCurrent().Name
-        $FileAcl = New-Object System.Security.AccessControl.FileSecurity
-        $OwnerRule = New-Object System.Security.AccessControl.FileSystemAccessRule($CurrentUser, "FullControl", "Allow")
-        $FileAcl.SetAccessRuleProtection($true, $false) # Strip inherited permissions
-        $FileAcl.SetAccessRule($OwnerRule)
-        (Get-Item -LiteralPath $TempConfigFile).SetAccessControl($FileAcl)
-
-        $ConfigLines = @(
-            "header = ""apikey: $ApiKey"""
-            "header = ""Authorization: Bearer $ApiKey"""
-        )
-        [System.IO.File]::WriteAllLines($TempConfigFile, $ConfigLines)
         $curlArgs += @("-K", $TempConfigFile)
     } else {
         Write-Host "Pinging Supabase REST gateway ($ProjectRef)..." -ForegroundColor Cyan
@@ -123,8 +139,10 @@ try {
 } finally {
     if ($TempConfigFile -and (Test-Path -LiteralPath $TempConfigFile)) {
         try {
-            # Zero out secret content before deletion
-            [System.IO.File]::WriteAllBytes($TempConfigFile, [byte[]]::new(256))
+            # Overwrite entire allocated file length with zero bytes before unlinking
+            $FileLength = (Get-Item -LiteralPath $TempConfigFile).Length
+            $ScrubBytes = [byte[]]::new([Math]::Max($FileLength, 1024))
+            [System.IO.File]::WriteAllBytes($TempConfigFile, $ScrubBytes)
         } catch { }
         Remove-Item -LiteralPath $TempConfigFile -Force -ErrorAction SilentlyContinue
     }
