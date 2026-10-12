@@ -38,7 +38,12 @@ jobs:
           if [ "$STATUS" = "200" ] || [ "$STATUS" = "206" ]; then
             echo "SUCCESS: Authenticated database query completed! Activity timer reset."
           elif [ "$STATUS" = "401" ]; then
-            echo "GATEWAY ACTIVE: Inbound traffic recorded by Supabase REST gateway (HTTP 401). Set SUPABASE_ANON_KEY secret for authenticated table queries."
+            if [ -n "$ANON_KEY" ]; then
+              echo "ERROR: SUPABASE_ANON_KEY secret was provided but rejected by Supabase (HTTP 401 Unauthorized). Verify repository secret."
+              exit 1
+            else
+              echo "GATEWAY ACTIVE: Inbound traffic recorded by Supabase REST gateway (HTTP 401). Set SUPABASE_ANON_KEY secret for authenticated table queries."
+            fi
           elif [ "$STATUS" = "000" ]; then
             echo "ERROR: Failed to establish network connection or resolve host (Supabase project may be paused in dashboard)."
             exit 1
