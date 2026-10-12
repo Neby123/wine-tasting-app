@@ -4,8 +4,6 @@ on:
   schedule:
     # Runs every 3 days at 12:00 UTC to maintain project activity
     - cron: '0 12 */3 * *'
-  push:
-    branches: [ main ]
   workflow_dispatch:
 
 permissions:

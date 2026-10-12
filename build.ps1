@@ -7,11 +7,47 @@ $ErrorActionPreference = "Stop"
 $ProjectDir = $PSScriptRoot
 if (-not $ProjectDir) { $ProjectDir = (Get-Location).Path }
 
-# Generate unique build directory to eliminate concurrency race conditions
+# Acquire inter-process file lock to serialize concurrent builds
+$LockFilePath = Join-Path $env:TEMP "wine_tasting_build.lock"
+$LockStream = $null
+try {
+    $LockFile = [System.IO.File]::Open($LockFilePath, [System.IO.FileMode]::OpenOrCreate, [System.IO.FileAccess]::ReadWrite, [System.IO.FileShare]::None)
+} catch {
+    Write-Host "Another build is currently in progress. Waiting for lock..." -ForegroundColor Yellow
+    $Retries = 0
+    while ($Retries -lt 30) {
+        Start-Sleep -Seconds 2
+        try {
+            $LockFile = [System.IO.File]::Open($LockFilePath, [System.IO.FileMode]::OpenOrCreate, [System.IO.FileAccess]::ReadWrite, [System.IO.FileShare]::None)
+            break
+        } catch {
+            $Retries++
+        }
+    }
+    if (-not $LockFile) {
+        throw "Could not acquire build lock after 60 seconds. Aborting concurrent build."
+    }
+}
+
+# Clean up any leftover staging/backup artifacts from interrupted previous runs
+$StaleBackups = Get-ChildItem -Path $ProjectDir -Filter "dist_backup_*" -Directory -ErrorAction SilentlyContinue
+$StaleStagings = Get-ChildItem -Path $ProjectDir -Filter "dist_staging_*" -Directory -ErrorAction SilentlyContinue
+$TargetDist = Join-Path $ProjectDir "dist"
+
+if (-not (Test-Path $TargetDist) -and $StaleBackups) {
+    $MostRecentBackup = $StaleBackups | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+    if ($MostRecentBackup) {
+        Rename-Item -Path $MostRecentBackup.FullName -NewName "dist" -Force
+    }
+}
+Get-ChildItem -Path $ProjectDir -Filter "dist_staging_*" -Directory -ErrorAction SilentlyContinue | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
+Get-ChildItem -Path $ProjectDir -Filter "dist_backup_*" -Directory -ErrorAction SilentlyContinue | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
+
+# Generate unique build directory for isolated workspace
 $BuildGuid = [guid]::NewGuid().ToString("N")
 $BuildDir = Join-Path $env:TEMP "wine-tasting-build-$BuildGuid"
 
-# Locate Node/npm (prioritize portable Node.js if available, otherwise system PATH)
+# Locate Node/npm (prioritize portable Node.js if present, otherwise system PATH)
 $NodePortable = Join-Path (Split-Path $ProjectDir -Parent) "node-portable"
 $NpmCmd = ""
 if (Test-Path (Join-Path $NodePortable "npm.cmd")) {
@@ -44,10 +80,10 @@ try {
     Copy-Item -Path (Join-Path $ProjectDir "src") -Destination (Join-Path $BuildDir "src") -Recurse -Force
     Copy-Item -Path (Join-Path $ProjectDir "package.json") -Destination (Join-Path $BuildDir "package.json") -Force
     
-    # Copy package-lock.json if present to maintain supply-chain integrity
-    $LockFile = Join-Path $ProjectDir "package-lock.json"
-    if (Test-Path $LockFile) {
-        Copy-Item -Path $LockFile -Destination (Join-Path $BuildDir "package-lock.json") -Force
+    $ProjectLockFile = Join-Path $ProjectDir "package-lock.json"
+    $HasLockFile = Test-Path $ProjectLockFile
+    if ($HasLockFile) {
+        Copy-Item -Path $ProjectLockFile -Destination (Join-Path $BuildDir "package-lock.json") -Force
     }
     
     Copy-Item -Path (Join-Path $ProjectDir "vite.config.ts") -Destination (Join-Path $BuildDir "vite.config.ts") -Force
@@ -58,9 +94,13 @@ try {
 
     Write-Host "3. Installing dependencies in local build folder..." -ForegroundColor Cyan
     Set-Location $BuildDir
-    & $NpmCmd install --no-audit --no-fund
+    if ($HasLockFile) {
+        & $NpmCmd ci --no-audit --no-fund
+    } else {
+        & $NpmCmd install --no-audit --no-fund
+    }
     if ($LASTEXITCODE -ne 0) {
-        throw "npm install failed with exit code $LASTEXITCODE"
+        throw "Dependency installation failed with exit code $LASTEXITCODE"
     }
 
     Write-Host "4. Compiling web application..." -ForegroundColor Cyan
@@ -78,7 +118,6 @@ try {
     Set-Location $OriginalLocation
 
     Write-Host "5. Atomically updating distribution files in Google Drive..." -ForegroundColor Cyan
-    $TargetDist = Join-Path $ProjectDir "dist"
     $StagingDist = Join-Path $ProjectDir "dist_staging_$BuildGuid"
     $BackupDist = Join-Path $ProjectDir "dist_backup_$BuildGuid"
 
@@ -103,16 +142,23 @@ finally {
     if (Test-Path $BuildDir) {
         Remove-Item $BuildDir -Recurse -Force -ErrorAction SilentlyContinue
     }
-    # Clean up any orphaned staging folders if an error occurred before completion
+    # Automatic rollback if build or publish failed
     if (-not $BuildSucceeded) {
         $StagingDist = Join-Path $ProjectDir "dist_staging_$BuildGuid"
         $BackupDist = Join-Path $ProjectDir "dist_backup_$BuildGuid"
         if (Test-Path $StagingDist) {
             Remove-Item $StagingDist -Recurse -Force -ErrorAction SilentlyContinue
         }
-        if (Test-Path $BackupDist -and (-not (Test-Path (Join-Path $ProjectDir "dist")))) {
+        if ((Test-Path $BackupDist) -and (-not (Test-Path (Join-Path $ProjectDir "dist")))) {
             Rename-Item -Path $BackupDist -NewName "dist" -Force
         }
+    }
+
+    # Release process lock
+    if ($LockFile) {
+        $LockFile.Close()
+        $LockFile.Dispose()
+        Remove-Item $LockFilePath -Force -ErrorAction SilentlyContinue
     }
 }
 
