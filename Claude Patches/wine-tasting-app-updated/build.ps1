@@ -1,51 +1,121 @@
-# build.ps1 - Compiles the app using a local C: directory to bypass Google Drive sync locks
-$ProjectDir = $PSScriptRoot
-if (-not $ProjectDir) { $ProjectDir = Get-Location }
-$BuildDir = Join-Path $env:TEMP "wine-tasting-app-build"
-$NodePortable = Resolve-Path "$ProjectDir\..\node-portable"
+# build.ps1 - Compiles the app using an isolated local temp directory to bypass Google Drive sync locks
+[CmdletBinding()]
+param()
 
-# Add portable Node.js to path so npm sub-processes and scripts can execute successfully
-$env:PATH = "$NodePortable;$env:PATH"
+$ErrorActionPreference = "Stop"
+
+$ProjectDir = $PSScriptRoot
+if (-not $ProjectDir) { $ProjectDir = (Get-Location).Path }
+
+$BuildGuid = [guid]::NewGuid().ToString("N")
+$BuildDir = Join-Path $env:TEMP "wine-tasting-build-$BuildGuid"
+
+$NodePortable = Join-Path (Split-Path (Split-Path (Split-Path $ProjectDir -Parent) -Parent) -Parent) "node-portable"
+$NpmCmd = ""
+if (Test-Path (Join-Path $NodePortable "npm.cmd")) {
+    $NpmCmd = Join-Path $NodePortable "npm.cmd"
+    $NodeExe = Join-Path $NodePortable "node.exe"
+    if (Test-Path $NodeExe) {
+        $env:PATH = "$NodePortable;$env:PATH"
+    }
+} else {
+    $SystemNpm = Get-Command npm.cmd, npm -ErrorAction SilentlyContinue | Select-Object -First 1
+    if ($SystemNpm) {
+        $NpmCmd = $SystemNpm.Source
+    } else {
+        throw "npm command could not be located in portable directory or system PATH."
+    }
+}
 
 Write-Host "=========================================" -ForegroundColor Yellow
 Write-Host "   Wine Tasting Web App Compilation" -ForegroundColor Yellow
 Write-Host "=========================================" -ForegroundColor Yellow
 
-Write-Host "1. Creating local build folder at $BuildDir..." -ForegroundColor Cyan
-if (Test-Path $BuildDir) {
-    Remove-Item $BuildDir -Recurse -Force -ErrorAction SilentlyContinue
+$OriginalLocation = Get-Location
+$BuildSucceeded = $false
+
+try {
+    Write-Host "1. Creating isolated build folder at $BuildDir..." -ForegroundColor Cyan
+    New-Item -ItemType Directory -Path $BuildDir -Force | Out-Null
+
+    Write-Host "2. Copying project files..." -ForegroundColor Cyan
+    Copy-Item -Path (Join-Path $ProjectDir "src") -Destination (Join-Path $BuildDir "src") -Recurse -Force
+    Copy-Item -Path (Join-Path $ProjectDir "package.json") -Destination (Join-Path $BuildDir "package.json") -Force
+    
+    $LockFile = Join-Path $ProjectDir "package-lock.json"
+    if (Test-Path $LockFile) {
+        Copy-Item -Path $LockFile -Destination (Join-Path $BuildDir "package-lock.json") -Force
+    }
+    
+    Copy-Item -Path (Join-Path $ProjectDir "vite.config.ts") -Destination (Join-Path $BuildDir "vite.config.ts") -Force
+    Copy-Item -Path (Join-Path $ProjectDir "tsconfig.json") -Destination (Join-Path $BuildDir "tsconfig.json") -Force
+    Copy-Item -Path (Join-Path $ProjectDir "postcss.config.js") -Destination (Join-Path $BuildDir "postcss.config.js") -Force
+    Copy-Item -Path (Join-Path $ProjectDir "tailwind.config.js") -Destination (Join-Path $BuildDir "tailwind.config.js") -Force
+    Copy-Item -Path (Join-Path $ProjectDir "index.html") -Destination (Join-Path $BuildDir "index.html") -Force
+
+    Write-Host "3. Installing dependencies in local build folder..." -ForegroundColor Cyan
+    Set-Location $BuildDir
+    & $NpmCmd install --no-audit --no-fund
+    if ($LASTEXITCODE -ne 0) {
+        throw "npm install failed with exit code $LASTEXITCODE"
+    }
+
+    Write-Host "4. Compiling web application..." -ForegroundColor Cyan
+    & $NpmCmd run build
+    if ($LASTEXITCODE -ne 0) {
+        throw "npm run build failed with exit code $LASTEXITCODE"
+    }
+
+    $CompiledDist = Join-Path $BuildDir "dist"
+    $CompiledIndex = Join-Path $CompiledDist "index.html"
+    if (-not (Test-Path $CompiledIndex)) {
+        throw "Verification failed: Compiled output index.html not found in $CompiledDist"
+    }
+
+    Set-Location $OriginalLocation
+
+    Write-Host "5. Atomically updating distribution files in Google Drive..." -ForegroundColor Cyan
+    $TargetDist = Join-Path $ProjectDir "dist"
+    $StagingDist = Join-Path $ProjectDir "dist_staging_$BuildGuid"
+    $BackupDist = Join-Path $ProjectDir "dist_backup_$BuildGuid"
+
+    Copy-Item -Path $CompiledDist -Destination $StagingDist -Recurse -Force
+
+    if (Test-Path $TargetDist) {
+        Rename-Item -Path $TargetDist -NewName "dist_backup_$BuildGuid" -Force
+    }
+    Rename-Item -Path $StagingDist -NewName "dist" -Force
+
+    if (Test-Path $BackupDist) {
+        Remove-Item -Path $BackupDist -Recurse -Force -ErrorAction SilentlyContinue
+    }
+
+    $BuildSucceeded = $true
 }
-New-Item -ItemType Directory -Path $BuildDir -Force | Out-Null
-
-Write-Host "2. Copying project files..." -ForegroundColor Cyan
-Copy-Item -Path "$ProjectDir\src" -Destination "$BuildDir\src" -Recurse -Force
-Copy-Item -Path "$ProjectDir\package.json" -Destination "$BuildDir\package.json" -Force
-Copy-Item -Path "$ProjectDir\vite.config.ts" -Destination "$BuildDir\vite.config.ts" -Force
-Copy-Item -Path "$ProjectDir\tsconfig.json" -Destination "$BuildDir\tsconfig.json" -Force
-Copy-Item -Path "$ProjectDir\postcss.config.js" -Destination "$BuildDir\postcss.config.js" -Force
-Copy-Item -Path "$ProjectDir\tailwind.config.js" -Destination "$BuildDir\tailwind.config.js" -Force
-Copy-Item -Path "$ProjectDir\index.html" -Destination "$BuildDir\index.html" -Force
-
-Write-Host "3. Installing dependencies in local build folder..." -ForegroundColor Cyan
-Push-Location $BuildDir
-& "$NodePortable\npm.cmd" install --no-audit --no-fund
-
-Write-Host "4. Compiling web application..." -ForegroundColor Cyan
-& "$NodePortable\npm.cmd" run build
-
-Pop-Location
-
-Write-Host "5. Copying compiled distribution files back to Google Drive..." -ForegroundColor Cyan
-if (Test-Path "$ProjectDir\dist") {
-    Remove-Item "$ProjectDir\dist" -Recurse -Force -ErrorAction SilentlyContinue
+finally {
+    Set-Location $OriginalLocation
+    Write-Host "6. Cleaning up temporary build artifacts..." -ForegroundColor Cyan
+    if (Test-Path $BuildDir) {
+        Remove-Item $BuildDir -Recurse -Force -ErrorAction SilentlyContinue
+    }
+    if (-not $BuildSucceeded) {
+        $StagingDist = Join-Path $ProjectDir "dist_staging_$BuildGuid"
+        $BackupDist = Join-Path $ProjectDir "dist_backup_$BuildGuid"
+        if (Test-Path $StagingDist) {
+            Remove-Item $StagingDist -Recurse -Force -ErrorAction SilentlyContinue
+        }
+        if (Test-Path $BackupDist -and (-not (Test-Path (Join-Path $ProjectDir "dist")))) {
+            Rename-Item -Path $BackupDist -NewName "dist" -Force
+        }
+    }
 }
-Copy-Item -Path "$BuildDir\dist" -Destination "$ProjectDir\dist" -Recurse -Force
 
-Write-Host "6. Cleaning up local build folder..." -ForegroundColor Cyan
-Remove-Item $BuildDir -Recurse -Force -ErrorAction SilentlyContinue
-
-Write-Host "-----------------------------------------" -ForegroundColor Green
-Write-Host "SUCCESS: Build complete! Compiled static site files are in:" -ForegroundColor Green
-Write-Host "$ProjectDir\dist" -ForegroundColor White
-Write-Host "You can open index.html inside the dist folder or host it on Vercel/GitHub Pages." -ForegroundColor Gray
-Write-Host "=========================================" -ForegroundColor Green
+if ($BuildSucceeded) {
+    Write-Host "-----------------------------------------" -ForegroundColor Green
+    Write-Host "SUCCESS: Build complete! Verified distribution files in:" -ForegroundColor Green
+    Write-Host (Join-Path $ProjectDir "dist") -ForegroundColor White
+    Write-Host "=========================================" -ForegroundColor Green
+} else {
+    Write-Host "BUILD FAILED: See error log above." -ForegroundColor Red
+    exit 1
+}

@@ -2,38 +2,49 @@ name: Supabase Keepalive Ping
 
 on:
   schedule:
-    # Runs every 3 days at 12:00 UTC to keep the project active
+    # Runs every 3 days at 12:00 UTC to maintain project activity
     - cron: '0 12 */3 * *'
   push:
     branches: [ main ]
   workflow_dispatch:
+
+permissions:
+  contents: read
 
 jobs:
   keepalive:
     runs-on: ubuntu-latest
     steps:
       - name: Ping Supabase REST Gateway & Database
+        env:
+          ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
         run: |
           echo "Pinging Supabase project rprjfaxsmwdzqwzycujh..."
-          ANON_KEY="${{ secrets.SUPABASE_ANON_KEY }}"
           
           if [ -n "$ANON_KEY" ]; then
-            echo "Using configured SUPABASE_ANON_KEY secret..."
-            STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+            echo "Authenticated mode: Querying sessions table with repository secret..."
+            RAW_STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
               --retry 3 --retry-delay 5 --max-time 15 \
               -H "apikey: $ANON_KEY" \
               -H "Authorization: Bearer $ANON_KEY" \
-              "https://rprjfaxsmwdzqwzycujh.supabase.co/rest/v1/sessions?select=id&limit=1" || echo "000")
+              "https://rprjfaxsmwdzqwzycujh.supabase.co/rest/v1/sessions?select=id&limit=1" || true)
           else
-            echo "No custom secret set. Pinging REST gateway endpoint..."
-            STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+            echo "Unauthenticated gateway mode: Pinging REST API endpoint..."
+            RAW_STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
               --retry 3 --retry-delay 5 --max-time 15 \
-              "https://rprjfaxsmwdzqwzycujh.supabase.co/rest/v1/" || echo "000")
+              "https://rprjfaxsmwdzqwzycujh.supabase.co/rest/v1/" || true)
           fi
           
+          STATUS="${RAW_STATUS:-000}"
           echo "HTTP Response Status Code: $STATUS"
-          if [ "$STATUS" -ge 200 ] && [ "$STATUS" -lt 500 ]; then
-            echo "SUCCESS: Supabase project activity recorded! Status: HTTP $STATUS."
+          
+          if [ "$STATUS" -eq 200 ] || [ "$STATUS" -eq 206 ]; then
+            echo "SUCCESS: Authenticated database query completed! Activity timer reset."
+          elif [ "$STATUS" -eq 401 ]; then
+            echo "SUCCESS: Inbound traffic recorded by Supabase REST gateway (HTTP 401). Set SUPABASE_ANON_KEY secret for authenticated table queries."
+          elif [ "$STATUS" -eq 000 ]; then
+            echo "ERROR: Failed to establish network connection or resolve host."
+            exit 1
           else
-            echo "WARNING: Received unexpected status code HTTP $STATUS"
+            echo "NOTICE: Inbound ping completed with status HTTP $STATUS."
           fi
