@@ -30,7 +30,9 @@ jobs:
             exit 1
           fi
 
-          if [[ "$ANON_KEY" =~ (sb_secret_|service_role|master_key) ]]; then
+          # Case-insensitive check for high-privilege keywords
+          ANON_KEY_LOWER=$(echo "$ANON_KEY" | tr '[:upper:]' '[:lower:]')
+          if [[ "$ANON_KEY_LOWER" =~ (sb_secret_|service_role|master_key) ]]; then
             echo "SECURITY ERROR: High-privilege secret key pattern detected in SUPABASE_ANON_KEY secret. Provide anon key only."
             exit 1
           fi
@@ -38,24 +40,27 @@ jobs:
           if [[ "$ANON_KEY" == sb_publishable_* ]]; then
             echo "Publishable key format detected."
           else
-            # Decode JWT payload role claim with fail-closed validation
-            IFS='.' read -ra JWT_PARTS <<< "$ANON_KEY"
-            if [ "${#JWT_PARTS[@]}" -lt 2 ]; then
-              echo "SECURITY ERROR: SUPABASE_ANON_KEY must be a valid JWT with header and payload."
-              exit 1
-            fi
-
-            PAYLOAD_B64="${JWT_PARTS[1]}"
-            REM=$(( ${#PAYLOAD_B64} % 4 ))
-            if [ $REM -eq 2 ]; then PAYLOAD_B64="${PAYLOAD_B64}=="; elif [ $REM -eq 3 ]; then PAYLOAD_B64="${PAYLOAD_B64}="; fi
-
-            DECODED_PAYLOAD=$(echo "$PAYLOAD_B64" | tr '_-' '/+' | base64 -d 2>/dev/null)
-            if [ -z "$DECODED_PAYLOAD" ]; then
+            # Decode JWT payload and inspect top-level role claim using python3
+            ROLE=$(python3 -c "
+import sys, json, base64
+token = sys.argv[1]
+parts = token.split('.')
+if len(parts) < 2:
+    sys.exit(2)
+b64 = parts[1].replace('-', '+').replace('_', '/')
+b64 += '=' * ((4 - len(b64) % 4) % 4)
+try:
+    payload = json.loads(base64.b64decode(b64).decode('utf-8'))
+    print(payload.get('role', ''))
+except Exception:
+    sys.exit(3)
+" "$ANON_KEY")
+            STATUS_PY=$?
+            if [ $STATUS_PY -ne 0 ]; then
               echo "SECURITY ERROR: Failed to decode JWT payload in SUPABASE_ANON_KEY. Failing closed."
               exit 1
             fi
 
-            ROLE=$(echo "$DECODED_PAYLOAD" | grep -o '"role"[[:space:]]*:[[:space:]]*"[^"]*"' | head -n1 | sed -E 's/.*"role"[[:space:]]*:[[:space:]]*"([^"]*)".*/\1/')
             if [ "$ROLE" != "anon" ]; then
               echo "SECURITY ERROR: SUPABASE_ANON_KEY must have role 'anon'. Detected role '$ROLE'."
               exit 1

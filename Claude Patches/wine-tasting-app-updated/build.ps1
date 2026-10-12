@@ -9,22 +9,41 @@ if (-not $ProjectDir) { $ProjectDir = (Get-Location).Path }
 $ProjectDirCanonical = [System.IO.Path]::GetFullPath($ProjectDir).TrimEnd('\', '/') + [System.IO.Path]::DirectorySeparatorChar
 $TempDirCanonical = [System.IO.Path]::GetFullPath($env:TEMP).TrimEnd('\', '/') + [System.IO.Path]::DirectorySeparatorChar
 
-# Local lockfile in TEMP derived from canonical project path hash (prevents Google Drive cloud sync locks)
+# Local lockfile in TEMP derived from canonical project path hash and user SID (prevents cross-user collision & Drive sync locks)
 $ProjectBytes = [System.Text.Encoding]::UTF8.GetBytes($ProjectDirCanonical.ToLowerInvariant())
 $Hasher = [System.Security.Cryptography.SHA256]::Create()
 $ProjectHash = [System.BitConverter]::ToString($Hasher.ComputeHash($ProjectBytes)).Replace("-", "").Substring(0, 16)
-$LockFilePath = Join-Path $env:TEMP "wine_tasting_build_$ProjectHash.lock"
+$UserSid = [System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value
+$LockFilePath = Join-Path $env:TEMP "wine_tasting_build_${ProjectHash}_${UserSid}.lock"
 $LockFile = $null
 
+$CurrentUser = [System.Security.Principal.WindowsIdentity]::GetCurrent().Name
+$FileSecurity = New-Object System.Security.AccessControl.FileSecurity
+$OwnerRule = New-Object System.Security.AccessControl.FileSystemAccessRule($CurrentUser, "FullControl", "Allow")
+$FileSecurity.SetAccessRuleProtection($true, $false)
+$FileSecurity.SetAccessRule($OwnerRule)
+
+function Open-BuildLock([string]$Path, [System.Security.AccessControl.FileSecurity]$Security) {
+    return New-Object System.IO.FileStream(
+        $Path,
+        [System.IO.FileMode]::OpenOrCreate,
+        [System.Security.AccessControl.FileSystemRights]::FullControl,
+        [System.IO.FileShare]::None,
+        4096,
+        [System.IO.FileOptions]::None,
+        $Security
+    )
+}
+
 try {
-    $LockFile = [System.IO.File]::Open($LockFilePath, [System.IO.FileMode]::OpenOrCreate, [System.IO.FileAccess]::ReadWrite, [System.IO.FileShare]::None)
+    $LockFile = Open-BuildLock $LockFilePath $FileSecurity
 } catch [System.IO.IOException] {
     Write-Host "Another build is in progress for this project. Waiting for lock..." -ForegroundColor Yellow
     $Retries = 0
     while ($Retries -lt 30) {
         Start-Sleep -Seconds 2
         try {
-            $LockFile = [System.IO.File]::Open($LockFilePath, [System.IO.FileMode]::OpenOrCreate, [System.IO.FileAccess]::ReadWrite, [System.IO.FileShare]::None)
+            $LockFile = Open-BuildLock $LockFilePath $FileSecurity
             break
         } catch [System.IO.IOException] {
             $Retries++
@@ -93,9 +112,15 @@ function Remove-SafeStagingFolder([string]$FolderPath) {
         }
     }
 
-    # Delete unlinked directories from deepest child up to root
+    # Re-verify and delete unlinked directories from deepest child up to root
     for ($i = $DirsToDelete.Count - 1; $i -ge 0; $i--) {
-        $DirsToDelete[$i].Delete($false)
+        $Dir = $DirsToDelete[$i]
+        $Dir.Refresh()
+        if (($Dir.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) {
+            $Dir.Delete($false)
+        } else {
+            try { $Dir.Delete($false) } catch { }
+        }
     }
 }
 
@@ -149,7 +174,13 @@ function Remove-SafeTempFolder([string]$FolderPath) {
     }
 
     for ($i = $DirsToDelete.Count - 1; $i -ge 0; $i--) {
-        $DirsToDelete[$i].Delete($false)
+        $Dir = $DirsToDelete[$i]
+        $Dir.Refresh()
+        if (($Dir.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) {
+            $Dir.Delete($false)
+        } else {
+            try { $Dir.Delete($false) } catch { }
+        }
     }
 }
 
@@ -274,13 +305,21 @@ try {
 
     Write-Host "3. Installing dependencies in local build folder..." -ForegroundColor Cyan
     Set-Location $BuildDir
-    # Install dependencies with --ignore-scripts to eliminate arbitrary lifecycle script execution
+    # Install dependencies with --ignore-scripts to suppress package install lifecycle hooks
     & $NpmCmd ci --ignore-scripts --no-audit --no-fund
     if ($LASTEXITCODE -ne 0) {
         throw "Dependency installation failed with exit code $LASTEXITCODE"
     }
 
     Write-Host "4. Compiling web application..." -ForegroundColor Cyan
+    # Scrub sensitive ambient environment credentials prior to executing build scripts
+    $SensitiveEnvVars = @('GITHUB_TOKEN', 'GH_TOKEN', 'AWS_ACCESS_KEY_ID', 'AWS_SECRET_ACCESS_KEY', 'AWS_SESSION_TOKEN', 'DATABASE_URL', 'STRIPE_SECRET_KEY', 'SUPABASE_SERVICE_ROLE_KEY')
+    foreach ($Var in $SensitiveEnvVars) {
+        if (Test-Path -LiteralPath "env:$Var") {
+            Remove-Item -LiteralPath "env:$Var" -Force -ErrorAction SilentlyContinue
+        }
+    }
+
     & $NpmCmd run build
     if ($LASTEXITCODE -ne 0) {
         throw "npm run build failed with exit code $LASTEXITCODE"
@@ -297,7 +336,8 @@ try {
     Write-Host "5. Publishing verified distribution..." -ForegroundColor Cyan
     Copy-Item -Path $CompiledDist -Destination $StagingDist -Recurse -Force
 
-    # Swap distribution directory: target is backed up, staging is renamed to target
+    # Two-phase publication swap: existing dist is preserved to backup, staging is promoted to dist
+    # (Rollback in finally block and startup sweep guarantee recovery if interrupted)
     if (Test-Path -LiteralPath $TargetDist) {
         Rename-Item -LiteralPath $TargetDist -NewName ([System.IO.Path]::GetFileName($BackupDist)) -Force
     }
