@@ -19,35 +19,31 @@ jobs:
         run: |
           echo "Pinging Supabase project rprjfaxsmwdzqwzycujh..."
           
-          if [ -n "$ANON_KEY" ]; then
-            echo "Authenticated mode: Querying sessions table with repository secret..."
-            RAW_STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
-              --retry 3 --retry-delay 5 --max-time 15 \
-              -K <(printf 'header = "apikey: %s"\nheader = "Authorization: Bearer %s"\n' "$ANON_KEY" "$ANON_KEY") \
-              "https://rprjfaxsmwdzqwzycujh.supabase.co/rest/v1/sessions?select=id&limit=1" || true)
-          else
-            echo "Unauthenticated gateway mode: Pinging REST API endpoint..."
-            RAW_STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
-              --retry 3 --retry-delay 5 --max-time 15 \
-              "https://rprjfaxsmwdzqwzycujh.supabase.co/rest/v1/" || true)
+          if [ -z "$ANON_KEY" ]; then
+            echo "ERROR: SUPABASE_ANON_KEY secret is not configured in repository secrets."
+            echo "Supabase database activity keepalive requires an anon API key to query Postgres tables."
+            exit 1
           fi
+
+          if ! [[ "$ANON_KEY" =~ ^[A-Za-z0-9._-]+$ ]]; then
+            echo "SECURITY ERROR: SUPABASE_ANON_KEY secret contains invalid characters. Must be a valid JWT token."
+            exit 1
+          fi
+
+          echo "Authenticated mode: Querying sessions table with repository secret..."
+          RAW_STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+            --retry 3 --retry-delay 5 --max-time 15 \
+            -K <(printf 'header = "apikey: %s"\nheader = "Authorization: Bearer %s"\n' "$ANON_KEY" "$ANON_KEY") \
+            "https://rprjfaxsmwdzqwzycujh.supabase.co/rest/v1/sessions?select=id&limit=1" || true)
           
           STATUS="${RAW_STATUS:-000}"
           echo "HTTP Response Status Code: $STATUS"
           
           if [ "$STATUS" = "200" ] || [ "$STATUS" = "206" ]; then
-            if [ -n "$ANON_KEY" ]; then
-              echo "SUCCESS: Authenticated database query completed! Activity timer reset."
-            else
-              echo "SUCCESS: Gateway ping completed (HTTP $STATUS). NOTE: SUPABASE_ANON_KEY was not set; request reached gateway but did not query Postgres tables."
-            fi
+            echo "SUCCESS: Authenticated database query completed! Activity timer reset."
           elif [ "$STATUS" = "401" ]; then
-            if [ -n "$ANON_KEY" ]; then
-              echo "ERROR: SUPABASE_ANON_KEY secret was provided but rejected by Supabase (HTTP 401 Unauthorized). Verify repository secret."
-              exit 1
-            else
-              echo "GATEWAY ACTIVE: Inbound traffic recorded by Supabase REST gateway (HTTP 401). NOTE: SUPABASE_ANON_KEY secret is not set; database activity timer was not refreshed."
-            fi
+            echo "ERROR: SUPABASE_ANON_KEY secret was rejected by Supabase (HTTP 401 Unauthorized). Verify repository secret."
+            exit 1
           elif [ "$STATUS" = "000" ]; then
             echo "ERROR: Failed to establish network connection or resolve host (Supabase project may be paused in dashboard)."
             exit 1

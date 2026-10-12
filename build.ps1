@@ -43,7 +43,7 @@ $StagingDist = Join-Path $ProjectDir "dist_staging_$BuildGuid"
 $BackupDist = Join-Path $ProjectDir "dist_backup_$BuildTimestamp"
 $TargetDist = Join-Path $ProjectDir "dist"
 
-# Safe folder deletion helper: enforces strict project root containment and guards against following reparse points (symlinks/junctions)
+# Safe folder deletion helper: enforces strict project containment and uses .NET DirectoryInfo to safely unlink junctions without following them
 function Remove-SafeStagingFolder([string]$FolderPath) {
     if (-not (Test-Path -LiteralPath $FolderPath)) { return }
     $CanonicalPath = [System.IO.Path]::GetFullPath($FolderPath)
@@ -52,30 +52,31 @@ function Remove-SafeStagingFolder([string]$FolderPath) {
         return
     }
 
-    $TopItem = Get-Item -LiteralPath $CanonicalPath -Force -ErrorAction SilentlyContinue
-    if (-not $TopItem) { return }
+    $DirInfo = New-Object System.IO.DirectoryInfo($CanonicalPath)
+    if (-not $DirInfo.Exists) { return }
 
-    # If top item is a reparse point (junction/symlink), remove the link only without recursing into target
-    if (($TopItem.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) {
-        Write-Warning "Reparse point detected on $CanonicalPath. Safely removing link without traversing contents..."
-        cmd /c rmdir "$CanonicalPath" 2>&1 | Out-Null
+    # If top item is a reparse point (junction/symlink), safely delete the junction without recursing into target
+    if (($DirInfo.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) {
+        Write-Warning "Reparse point detected on $CanonicalPath. Safely deleting junction link..."
+        $DirInfo.Delete($false)
         return
     }
 
-    # Inspect tree for any nested reparse points
-    $ChildReparse = Get-ChildItem -LiteralPath $CanonicalPath -Recurse -Force -ErrorAction SilentlyContinue | Where-Object {
-        ($_.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0
-    }
-    if ($ChildReparse) {
-        Write-Warning "Nested reparse point detected in $CanonicalPath. Refusing to remove folder to prevent traversal."
-        return
+    # Verify no descendant items are reparse points before recursive deletion
+    $AllItems = $DirInfo.GetFileSystemInfos("*", [System.IO.SearchOption]::AllDirectories)
+    foreach ($Item in $AllItems) {
+        if (($Item.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) {
+            Write-Warning "Reparse point detected inside $CanonicalPath ($($Item.FullName)). Unlinking reparse point..."
+            if ($Item -is [System.IO.DirectoryInfo]) {
+                $Item.Delete($false)
+            } else {
+                $Item.Delete()
+            }
+        }
     }
 
-    # Delete via native cmd rmdir which does not follow symlinks/junctions
-    cmd /c rmdir /s /q "$CanonicalPath" 2>&1 | Out-Null
-    if (Test-Path -LiteralPath $CanonicalPath) {
-        throw "Failed to safely remove staging folder: $CanonicalPath"
-    }
+    # Delete verified directory tree safely via .NET API
+    [System.IO.Directory]::Delete($CanonicalPath, $true)
 }
 
 # Outer try/catch/finally guarantees lock disposal and proper error propagation
@@ -86,7 +87,7 @@ try {
             $TempFolder = $_.FullName
             $Item = Get-Item -LiteralPath $TempFolder -Force -ErrorAction SilentlyContinue
             if ($Item -and (($Item.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -eq 0)) {
-                cmd /c rmdir /s /q "$TempFolder" 2>&1 | Out-Null
+                try { [System.IO.Directory]::Delete($TempFolder, $true) } catch { }
             }
         }
     }
@@ -102,10 +103,10 @@ try {
     }
 
     Get-ChildItem -LiteralPath $ProjectDir -Filter "dist_staging_*" -Directory -ErrorAction SilentlyContinue | ForEach-Object {
-        Remove-SafeStagingFolder $_.FullName
+        try { Remove-SafeStagingFolder $_.FullName } catch { }
     }
     Get-ChildItem -LiteralPath $ProjectDir -Filter "dist_backup_*" -Directory -ErrorAction SilentlyContinue | ForEach-Object {
-        Remove-SafeStagingFolder $_.FullName
+        try { Remove-SafeStagingFolder $_.FullName } catch { }
     }
 
     # Generate unique isolated temporary build directory scoped to this project hash
@@ -151,14 +152,18 @@ try {
                     $Token = $Matches[1]
                     $Parts = $Token.Split('.')
                     if ($Parts.Length -ge 2) {
+                        $IsServiceRole = $false
                         try {
                             $B64 = $Parts[1].Replace('-', '+').Replace('_', '/')
                             switch ($B64.Length % 4) { 2 { $B64 += "==" } 3 { $B64 += "=" } }
                             $Payload = [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String($B64))
                             if ($Payload -match '"role"\s*:\s*"service_role"') {
-                                throw "Security violation in .env: Service role JWT detected in VITE_* variable: $Line"
+                                $IsServiceRole = $true
                             }
                         } catch { }
+                        if ($IsServiceRole) {
+                            throw "Security violation in .env: Service role JWT detected in VITE_* variable: $Line"
+                        }
                     }
                 }
                 $ViteEnvLines += $Line
@@ -170,6 +175,14 @@ try {
         }
     }
     
+    # Optional assets
+    if (Test-Path (Join-Path $ProjectDir "public")) {
+        Copy-Item -Path (Join-Path $ProjectDir "public") -Destination (Join-Path $BuildDir "public") -Recurse -Force
+    }
+    if (Test-Path (Join-Path $ProjectDir "tsconfig.node.json")) {
+        Copy-Item -Path (Join-Path $ProjectDir "tsconfig.node.json") -Destination (Join-Path $BuildDir "tsconfig.node.json") -Force
+    }
+
     Copy-Item -Path (Join-Path $ProjectDir "vite.config.ts") -Destination (Join-Path $BuildDir "vite.config.ts") -Force
     Copy-Item -Path (Join-Path $ProjectDir "tsconfig.json") -Destination (Join-Path $BuildDir "tsconfig.json") -Force
     Copy-Item -Path (Join-Path $ProjectDir "postcss.config.js") -Destination (Join-Path $BuildDir "postcss.config.js") -Force
@@ -207,12 +220,17 @@ try {
     }
     Rename-Item -Path $StagingDist -NewName (Split-Path $TargetDist -Leaf) -Force
 
-    # Remove backup once publish has verified
-    if (Test-Path $BackupDist) {
-        Remove-SafeStagingFolder $BackupDist
-    }
-
+    # Output is now verified and active in target directory
     $BuildSucceeded = $true
+
+    # Clean up backup folder without aborting successful build
+    if (Test-Path $BackupDist) {
+        try {
+            Remove-SafeStagingFolder $BackupDist
+        } catch {
+            Write-Warning "Could not immediately remove previous build backup ($BackupDist): $_"
+        }
+    }
 } catch {
     Set-Location $OriginalLocation
     Write-Host "BUILD ERROR: $_" -ForegroundColor Red
@@ -220,28 +238,46 @@ try {
 } finally {
     Set-Location $OriginalLocation
     Write-Host "6. Cleaning up temporary build artifacts..." -ForegroundColor Cyan
-    if ($BuildDir -and (Test-Path $BuildDir)) {
-        cmd /c rmdir /s /q "$BuildDir" 2>&1 | Out-Null
+
+    # Guarded cleanup: temporary build directory
+    try {
+        if ($BuildDir -and (Test-Path -LiteralPath $BuildDir)) {
+            [System.IO.Directory]::Delete($BuildDir, $true)
+        }
+    } catch {
+        Write-Warning "Could not delete temporary build directory ($BuildDir): $_"
     }
 
-    # If build failed before clean completion, roll back from backup if target is missing
-    if (-not $BuildSucceeded) {
-        if (Test-Path $StagingDist) {
-            Remove-SafeStagingFolder $StagingDist
+    # Guarded cleanup: rollback if build did not succeed
+    try {
+        if (-not $BuildSucceeded) {
+            if (Test-Path -LiteralPath $StagingDist) {
+                Remove-SafeStagingFolder $StagingDist
+            }
+            if ((Test-Path -LiteralPath $BackupDist) -and (-not (Test-Path -LiteralPath $TargetDist))) {
+                Rename-Item -LiteralPath $BackupDist -NewName (Split-Path $TargetDist -Leaf) -Force
+            }
         }
-        if ((Test-Path $BackupDist) -and (-not (Test-Path $TargetDist))) {
-            Rename-Item -Path $BackupDist -NewName (Split-Path $TargetDist -Leaf) -Force
-        }
+    } catch {
+        Write-Warning "Error during build rollback: $_"
     }
 
-    # Release file lock (OS cleans up the file handle)
-    if ($LockFile) {
-        $LockFile.Close()
-        $LockFile.Dispose()
+    # Guarded cleanup: lock file release
+    try {
+        if ($LockFile) {
+            $LockFile.Close()
+            $LockFile.Dispose()
+        }
+    } catch {
+        Write-Warning "Error disposing build lock: $_"
     }
-    if (Test-Path $LockFilePath) {
-        Remove-Item -Path $LockFilePath -Force -ErrorAction SilentlyContinue
-    }
+
+    # Guarded cleanup: lock file removal
+    try {
+        if (Test-Path -LiteralPath $LockFilePath) {
+            Remove-Item -LiteralPath $LockFilePath -Force -ErrorAction SilentlyContinue
+        }
+    } catch { }
 }
 
 if ($BuildSucceeded) {

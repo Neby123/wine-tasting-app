@@ -84,14 +84,20 @@ try {
 
     Write-Host "Supabase API Response Status Code: $httpCode" -ForegroundColor Yellow
 
-    if ($httpCode -ge 200 -and $httpCode -lt 300) {
+    $statusCode = 0
+    if (-not [int]::TryParse($httpCode, [ref]$statusCode)) {
+        Write-Host "ERROR: Non-numeric HTTP response received: $httpCode" -ForegroundColor Red
+        exit 1
+    }
+
+    if ($statusCode -ge 200 -and $statusCode -lt 300) {
         if ($ApiKey) {
-            Write-Host "SUCCESS: Authenticated database query confirmed (HTTP $httpCode). Project activity timer reset." -ForegroundColor Green
+            Write-Host "SUCCESS: Authenticated database query confirmed (HTTP $statusCode). Project activity timer reset." -ForegroundColor Green
         } else {
-            Write-Host "SUCCESS: Gateway ping confirmed (HTTP $httpCode)." -ForegroundColor Green
+            Write-Host "SUCCESS: Gateway ping confirmed (HTTP $statusCode)." -ForegroundColor Green
         }
         exit 0
-    } elseif ($httpCode -eq "401") {
+    } elseif ($statusCode -eq 401) {
         if ($ApiKey) {
             Write-Host "ERROR: API key was provided but rejected by gateway (HTTP 401 Unauthorized). Verify key permissions." -ForegroundColor Red
             exit 1
@@ -101,7 +107,7 @@ try {
             exit 2
         }
     } else {
-        Write-Host "ERROR: Received unexpected HTTP status code $httpCode" -ForegroundColor Red
+        Write-Host "ERROR: Received unexpected HTTP status code $statusCode" -ForegroundColor Red
         exit 1
     }
 } finally {
