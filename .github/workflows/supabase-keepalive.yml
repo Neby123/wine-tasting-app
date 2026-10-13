@@ -2,8 +2,8 @@ name: Supabase Keepalive Ping
 
 on:
   schedule:
-    # Runs periodically to maintain project activity
-    - cron: '0 12 */3 * *'
+    # Runs twice weekly (every Monday & Thursday at 12:00 UTC) to prevent 7-day inactivity pause
+    - cron: '0 12 * * 1,4'
   workflow_dispatch:
 
 permissions:
@@ -31,7 +31,7 @@ jobs:
           fi
 
           # Case-insensitive check for high-privilege keywords
-          ANON_KEY_LOWER=$(echo "$ANON_KEY" | tr '[:upper:]' '[:lower:]')
+          ANON_KEY_LOWER=$(printf '%s' "$ANON_KEY" | tr '[:upper:]' '[:lower:]')
           if [[ "$ANON_KEY_LOWER" =~ (sb_secret_|service_role|master_key) ]]; then
             echo "SECURITY ERROR: High-privilege secret key pattern detected in SUPABASE_ANON_KEY secret. Provide anon key only."
             exit 1
@@ -40,10 +40,10 @@ jobs:
           if [[ "$ANON_KEY" == sb_publishable_* ]]; then
             echo "Publishable key format detected."
           else
-            # Decode JWT payload and inspect top-level role claim using python3
+            # Decode JWT payload and inspect top-level role claim using python3 via os.environ (no argv exposure)
             ROLE=$(python3 -c "
-import sys, json, base64
-token = sys.argv[1]
+import os, sys, json, base64
+token = os.environ.get('ANON_KEY', '')
 parts = token.split('.')
 if len(parts) < 2:
     sys.exit(2)
@@ -54,7 +54,7 @@ try:
     print(payload.get('role', ''))
 except Exception:
     sys.exit(3)
-" "$ANON_KEY")
+")
             STATUS_PY=$?
             if [ $STATUS_PY -ne 0 ]; then
               echo "SECURITY ERROR: Failed to decode JWT payload in SUPABASE_ANON_KEY. Failing closed."
@@ -68,9 +68,14 @@ except Exception:
           fi
 
           echo "Authenticated mode: Querying sessions table with repository secret..."
-          RAW_STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+          CURL_CFG="header = \"apikey: $ANON_KEY\""
+          if [[ "$ANON_KEY" != sb_publishable_* ]]; then
+            CURL_CFG="${CURL_CFG}"$'\n'"header = \"Authorization: Bearer $ANON_KEY\""
+          fi
+
+          RAW_STATUS=$(printf '%s\n' "$CURL_CFG" | curl -s -o /dev/null -w "%{http_code}" \
             --retry 3 --retry-delay 5 --max-time 15 \
-            -K <(printf 'header = "apikey: %s"\nheader = "Authorization: Bearer %s"\n' "$ANON_KEY" "$ANON_KEY") \
+            -K - \
             "https://rprjfaxsmwdzqwzycujh.supabase.co/rest/v1/sessions?select=id&limit=1" || true)
 
           STATUS="${RAW_STATUS:-000}"

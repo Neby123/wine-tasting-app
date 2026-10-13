@@ -1,413 +1,364 @@
-# build.ps1 - Compiles the app using an isolated local temp directory to bypass Google Drive sync locks
 [CmdletBinding()]
 param()
 
 $ErrorActionPreference = "Stop"
 
-$ProjectDir = $PSScriptRoot
-if (-not $ProjectDir) { $ProjectDir = (Get-Location).Path }
-$ProjectDirCanonical = [System.IO.Path]::GetFullPath($ProjectDir).TrimEnd('\', '/') + [System.IO.Path]::DirectorySeparatorChar
-$TempDirCanonical = [System.IO.Path]::GetFullPath($env:TEMP).TrimEnd('\', '/') + [System.IO.Path]::DirectorySeparatorChar
+if (-not ([System.Management.Automation.PSTypeName]'PathSecurity').Type) {
+    Add-Type -TypeDefinition @"
+using System; using System.IO; using System.Runtime.InteropServices; using System.Text; using Microsoft.Win32.SafeHandles;
+public static class PathSecurity {
+    [StructLayout(LayoutKind.Sequential)] public struct FILE_DISPOSITION_INFO { [MarshalAs(UnmanagedType.U1)] public bool DeleteFile; }
+    [DllImport("kernel32.dll", EntryPoint = "CreateFileW", CharSet = CharSet.Unicode, SetLastError = true)]
+    private static extern SafeFileHandle CreateFile(string n, uint a, uint s, IntPtr sec, uint d, uint f, IntPtr t);
+    [DllImport("kernel32.dll", EntryPoint = "GetFinalPathNameByHandleW", CharSet = CharSet.Unicode, SetLastError = true)]
+    private static extern uint GetFinalPathNameByHandle(SafeFileHandle h, StringBuilder b, uint c, uint f);
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern bool SetFileInformationByHandle(SafeFileHandle h, int c, ref FILE_DISPOSITION_INFO i, uint l);
+    [DllImport("kernel32.dll", EntryPoint = "MoveFileExW", CharSet = CharSet.Unicode, SetLastError = true)]
+    private static extern bool MoveFileEx(string e, string n, uint f);
 
-# Local lockfile in TEMP derived from canonical project path hash and user SID (prevents cross-user collision & Drive sync locks)
-$ProjectBytes = [System.Text.Encoding]::UTF8.GetBytes($ProjectDirCanonical.ToLowerInvariant())
-$Hasher = [System.Security.Cryptography.SHA256]::Create()
-$ProjectHash = [System.BitConverter]::ToString($Hasher.ComputeHash($ProjectBytes)).Replace("-", "").Substring(0, 16)
-$UserSid = [System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value
-$LockFilePath = Join-Path $env:TEMP "wine_tasting_build_${ProjectHash}_${UserSid}.lock"
-$LockFile = $null
+    public static string GetFinalPath(SafeFileHandle h) {
+        StringBuilder sb = new StringBuilder(1024);
+        uint res = GetFinalPathNameByHandle(h, sb, 1024, 0);
+        if (res == 0) return null;
+        if (res >= 1024) { sb = new StringBuilder((int)res + 2); if (GetFinalPathNameByHandle(h, sb, (uint)sb.Capacity, 0) == 0) return null; }
+        string p = sb.ToString();
+        return p.StartsWith(@"\\?\UNC\") ? @"\\" + p.Substring(8) : (p.StartsWith(@"\\?\") ? p.Substring(4) : p);
+    }
 
-$CurrentUser = [System.Security.Principal.WindowsIdentity]::GetCurrent().Name
-$FileSecurity = New-Object System.Security.AccessControl.FileSecurity
-$OwnerRule = New-Object System.Security.AccessControl.FileSystemAccessRule($CurrentUser, "FullControl", "Allow")
-$FileSecurity.SetAccessRuleProtection($true, $false)
-$FileSecurity.SetAccessRule($OwnerRule)
+    public static string GetFinalPath(string p) {
+        using (SafeFileHandle h = CreateFile(p, 0x0080, 7, IntPtr.Zero, 3, 0x02200000, IntPtr.Zero)) { return h.IsInvalid ? null : GetFinalPath(h); }
+    }
 
-function Open-BuildLock([string]$Path, [System.Security.AccessControl.FileSecurity]$Security) {
-    return New-Object System.IO.FileStream(
-        $Path,
-        [System.IO.FileMode]::OpenOrCreate,
-        [System.Security.AccessControl.FileSystemRights]::FullControl,
-        [System.IO.FileShare]::None,
-        4096,
-        [System.IO.FileOptions]::None,
-        $Security
-    )
+    public static bool IsStrictSubPath(string path, string parentCanonical) {
+        if (string.IsNullOrEmpty(path) || string.IsNullOrEmpty(parentCanonical)) return false;
+        string p = Path.GetFullPath(path).TrimEnd('\\', '/');
+        string parent = Path.GetFullPath(parentCanonical).TrimEnd('\\', '/');
+        return p.Equals(parent, StringComparison.OrdinalIgnoreCase) || p.StartsWith(parent + "\\", StringComparison.OrdinalIgnoreCase);
+    }
+
+    public static void AssertNotReparsePoint(string p, string root) {
+        using (SafeFileHandle h = CreateFile(p, 0x0080, 7, IntPtr.Zero, 3, 0x02200000, IntPtr.Zero)) {
+            if (h.IsInvalid) throw new FileNotFoundException(p);
+            string f = GetFinalPath(h);
+            if (f == null || (root != null && !IsStrictSubPath(f, root)) || (File.GetAttributes(p) & FileAttributes.ReparsePoint) != 0)
+                throw new InvalidOperationException("Reparse or outside root: " + p);
+        }
+    }
+    public static SafeFileHandle LockDirectory(string dir, string root) {
+        SafeFileHandle h = CreateFile(dir, 0x80000000, 3, IntPtr.Zero, 3, 0x02200000, IntPtr.Zero);
+        if (h.IsInvalid) throw new IOException("Cannot lock dir: " + dir);
+        string f = GetFinalPath(h);
+        if (f == null || !IsStrictSubPath(f, root) || (File.GetAttributes(dir) & FileAttributes.ReparsePoint) != 0) {
+            h.Dispose(); throw new InvalidOperationException("Directory invalid or reparse: " + dir);
+        }
+        return h;
+    }
+
+    public static void WriteFileHandleBound(string dir, string name, string content, string root) {
+        using (SafeFileHandle hDir = LockDirectory(dir, root)) {
+            string m = Path.Combine(dir, name);
+            if (File.Exists(m) && (File.GetAttributes(m) & FileAttributes.ReparsePoint) != 0) throw new InvalidOperationException("Reparse: " + m);
+            string tmp = Path.Combine(dir, name + ".tmp." + Guid.NewGuid().ToString("N"));
+            using (SafeFileHandle h = CreateFile(tmp, 0x40000000, 0, IntPtr.Zero, 2, 0x02200000, IntPtr.Zero)) {
+                if (h.IsInvalid) throw new IOException(tmp);
+                string f = GetFinalPath(h);
+                if (f == null || !IsStrictSubPath(f, root)) throw new InvalidOperationException("Outside root: " + tmp);
+                byte[] b = Encoding.UTF8.GetBytes(content);
+                using (FileStream s = new FileStream(h, FileAccess.Write)) { s.Write(b, 0, b.Length); s.Flush(true); }
+            }
+            if (File.Exists(m)) { FileAttributes a = File.GetAttributes(m); if ((a & FileAttributes.ReadOnly) != 0) File.SetAttributes(m, a & ~FileAttributes.ReadOnly); }
+            if (!MoveFileEx(tmp, m, 9)) { DeleteHandleBound(tmp, root); throw new IOException("Failed atomic rename: " + m); }
+            AssertNotReparsePoint(m, root);
+        }
+    }
+
+    public static void CopyFileHandleBound(string s, string d, string srcRoot, string dstRoot) {
+        using (SafeFileHandle hSrc = CreateFile(s, 0x80000080, 1, IntPtr.Zero, 3, 0x02200000, IntPtr.Zero)) {
+            if (hSrc.IsInvalid) throw new FileNotFoundException("Source: " + s);
+            string fSrc = GetFinalPath(hSrc);
+            if (fSrc == null || !IsStrictSubPath(fSrc, srcRoot) || (File.GetAttributes(s) & FileAttributes.ReparsePoint) != 0)
+                throw new InvalidOperationException("Source invalid or reparse: " + s);
+            string dir = Path.GetDirectoryName(d);
+            if (!Directory.Exists(dir)) Directory.CreateDirectory(dir);
+            using (SafeFileHandle hDir = LockDirectory(dir, dstRoot)) {
+                if (File.Exists(d) && (File.GetAttributes(d) & FileAttributes.ReparsePoint) != 0) throw new InvalidOperationException("Reparse dest: " + d);
+                string tmp = Path.Combine(dir, Path.GetFileName(d) + ".tmp." + Guid.NewGuid().ToString("N"));
+                using (SafeFileHandle hDst = CreateFile(tmp, 0x40000000, 0, IntPtr.Zero, 2, 0x02200000, IntPtr.Zero)) {
+                    if (hDst.IsInvalid) throw new IOException("Dest: " + tmp);
+                    string fDst = GetFinalPath(hDst);
+                    if (fDst == null || !IsStrictSubPath(fDst, dstRoot)) throw new InvalidOperationException("Dest outside root: " + tmp);
+                    using (FileStream src = new FileStream(hSrc, FileAccess.Read))
+                    using (FileStream dst = new FileStream(hDst, FileAccess.Write)) { src.CopyTo(dst); dst.Flush(true); }
+                }
+                if (File.Exists(d)) { FileAttributes a = File.GetAttributes(d); if ((a & FileAttributes.ReadOnly) != 0) File.SetAttributes(d, a & ~FileAttributes.ReadOnly); }
+                if (!MoveFileEx(tmp, d, 9)) { DeleteHandleBound(tmp, dstRoot); throw new IOException("Failed atomic rename: " + d); }
+                AssertNotReparsePoint(d, dstRoot);
+            }
+        }
+    }
+
+    public static bool DeleteHandleBound(string p, string root) {
+        if (!File.Exists(p) && !Directory.Exists(p)) return false;
+        using (SafeFileHandle h = CreateFile(p, 0x00010080, 7, IntPtr.Zero, 3, 0x02200000, IntPtr.Zero)) {
+            if (h.IsInvalid) return false;
+            string f = GetFinalPath(h);
+            if (f == null || !IsStrictSubPath(f, root)) throw new InvalidOperationException("Outside root: " + p);
+            FILE_DISPOSITION_INFO d = new FILE_DISPOSITION_INFO { DeleteFile = true };
+            if (!SetFileInformationByHandle(h, 4, ref d, (uint)Marshal.SizeOf(typeof(FILE_DISPOSITION_INFO)))) {
+                try { FileAttributes a = File.GetAttributes(p); if ((a & FileAttributes.ReadOnly) != 0) File.SetAttributes(p, a & ~FileAttributes.ReadOnly); } catch { }
+                return SetFileInformationByHandle(h, 4, ref d, (uint)Marshal.SizeOf(typeof(FILE_DISPOSITION_INFO)));
+            }
+            return true;
+        }
+    }
+
+    public static SafeFileHandle OpenLockHandle(string p, string root) {
+        SafeFileHandle h = CreateFile(p, 0xC0060000, 0, IntPtr.Zero, 4, 0x02200000, IntPtr.Zero);
+        if (h.IsInvalid) return null;
+        string f = GetFinalPath(h);
+        if (f == null || !IsStrictSubPath(f, root) || (File.GetAttributes(p) & FileAttributes.ReparsePoint) != 0) {
+            h.Dispose(); throw new InvalidOperationException("Lock is reparse or outside root: " + p);
+        }
+        return h;
+    }
+}
+"@
+}
+
+$ProjectDir = if ($PSScriptRoot) { $PSScriptRoot } else { (Get-Location).Path }
+$pFinal = [PathSecurity]::GetFinalPath($ProjectDir); if (-not $pFinal) { $pFinal = [System.IO.Path]::GetFullPath($ProjectDir) }
+$ProjectDirCanonical = $pFinal.TrimEnd('\', '/') + '\'
+$tFinal = [PathSecurity]::GetFinalPath($env:TEMP); if (-not $tFinal) { $tFinal = [System.IO.Path]::GetFullPath($env:TEMP) }
+$TempDirCanonical = $tFinal.TrimEnd('\', '/') + '\'
+
+function Test-AnonJwt([string]$Token) {
+    if ($Token -notmatch '^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$') { return $false }
+    try {
+        $b = $Token.Split('.')[1].Replace('-', '+').Replace('_', '/')
+        switch ($b.Length % 4) { 2 { $b += "==" } 3 { $b += "=" } }
+        return ((ConvertFrom-Json ([System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String($b)))).role -eq 'anon')
+    } catch { return $false }
+}
+
+function Assert-SecretScan([string]$DirectoryPath) {
+    Get-ChildItem -LiteralPath $DirectoryPath -Recurse -File | ForEach-Object {
+        $c = [System.IO.File]::ReadAllText($_.FullName)
+        if ($c -match 'sb_secret_[A-Za-z0-9_-]{10,}' -or $c -match '(?i)\b(service_role|master_key)\b') { throw "Forbidden key: $($_.Name)" }
+        foreach ($m in [regex]::Matches($c, 'eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}')) {
+            if (-not (Test-AnonJwt $m.Value)) { throw "Invalid JWT: $($_.Name)" }
+        }
+    }
+}
+
+$UserIdent = [System.Security.Principal.WindowsIdentity]::GetCurrent(); $UserSid = $UserIdent.User.Value
+$ProjectHash = [System.BitConverter]::ToString([System.Security.Cryptography.SHA256]::Create().ComputeHash([System.Text.Encoding]::UTF8.GetBytes($ProjectDirCanonical.ToLowerInvariant()))).Replace("-", "").Substring(0, 16)
+$LockFilePath = Join-Path $env:TEMP "wine_tasting_build_${ProjectHash}_${UserSid}.lock"; $LockFile = $null
+$FileSecurity = New-Object System.Security.AccessControl.FileSecurity; $FileSecurity.SetAccessRuleProtection($true, $false)
+$FileSecurity.SetAccessRule((New-Object System.Security.AccessControl.FileSystemAccessRule($UserIdent.User, "FullControl", "Allow")))
+
+function Open-BuildLock([string]$Path, [System.Security.AccessControl.FileSecurity]$Security, [string]$ExpectedSid, [string]$TempRoot) {
+    $Handle = [PathSecurity]::OpenLockHandle($Path, $TempRoot)
+    if (-not $Handle -or $Handle.IsInvalid) {
+        $Err = [System.Runtime.InteropServices.Marshal]::GetLastWin32Error()
+        if ($Err -eq 32) { throw [System.IO.IOException]"Lock busy." }
+        if ($Err -eq 5) { throw [System.UnauthorizedAccessException]"Lock access denied." }
+        throw (New-Object System.ComponentModel.Win32Exception($Err))
+    }
+    $Stream = New-Object System.IO.FileStream($Handle, [System.IO.FileAccess]::ReadWrite)
+    try {
+        if ($Stream.GetAccessControl().GetOwner([System.Security.Principal.SecurityIdentifier]).Value -ne $ExpectedSid) {
+            throw [System.Security.SecurityException]"Build lock owner mismatch ($ExpectedSid)."
+        }
+        $Stream.SetAccessControl($Security)
+        return $Stream
+    } catch { $Stream.Dispose(); throw }
 }
 
 try {
-    $LockFile = Open-BuildLock $LockFilePath $FileSecurity
-} catch [System.IO.IOException] {
-    Write-Host "Another build is in progress for this project. Waiting for lock..." -ForegroundColor Yellow
+    $LockFile = Open-BuildLock $LockFilePath $FileSecurity $UserSid $TempDirCanonical
+} catch [System.IO.IOException], [System.UnauthorizedAccessException] {
+    Write-Host "Waiting for build lock..." -ForegroundColor Yellow
     $Retries = 0
     while ($Retries -lt 30) {
         Start-Sleep -Seconds 2
-        try {
-            $LockFile = Open-BuildLock $LockFilePath $FileSecurity
-            break
-        } catch [System.IO.IOException] {
-            $Retries++
-        }
+        try { $LockFile = Open-BuildLock $LockFilePath $FileSecurity $UserSid $TempDirCanonical; break }
+        catch [System.IO.IOException], [System.UnauthorizedAccessException] { $Retries++ }
     }
-    if (-not $LockFile) {
-        throw "Could not acquire project build lock after 60 seconds. Aborting concurrent build."
-    }
+    if (-not $LockFile) { throw "Timeout acquiring build lock." }
 }
 
-$OriginalLocation = Get-Location
-$BuildSucceeded = $false
-$BuildDir = $null
-$BuildTimestamp = (Get-Date).ToUniversalTime().ToString("yyyyMMddTHHmmssZ")
-$BuildGuid = [guid]::NewGuid().ToString("N")
-$StagingDist = Join-Path $ProjectDir "dist_staging_$BuildGuid"
-$BackupDist = Join-Path $ProjectDir "dist_backup_$BuildTimestamp"
-$TargetDist = Join-Path $ProjectDir "dist"
+$OriginalLocation = Get-Location; $BuildSucceeded = $false; $BuildDir = $null; $PreservedEnvVars = @{}
+$BuildGuid = [guid]::NewGuid().ToString("N"); $TargetDist = Join-Path $ProjectDir "dist"
 
-# Safe non-traversing folder deletion: uses explicit stack walk and unlinks reparse points without following them
-function Remove-SafeStagingFolder([string]$FolderPath) {
+function Remove-SafeFolder([string]$FolderPath, [string]$AllowedParentCanonical, [string[]]$AllowedPrefixes) {
     if (-not (Test-Path -LiteralPath $FolderPath)) { return }
     $CanonicalPath = [System.IO.Path]::GetFullPath($FolderPath)
-    if (-not $CanonicalPath.StartsWith($ProjectDirCanonical, [System.StringComparison]::OrdinalIgnoreCase)) {
-        Write-Warning "Refusing to delete path outside project root: $CanonicalPath"
-        return
-    }
-
-    $DirInfo = New-Object System.IO.DirectoryInfo($CanonicalPath)
-    if (-not $DirInfo.Exists) { return }
-
-    # If top item is a reparse point (junction/symlink), safely unlink without recursing into target
-    if (($DirInfo.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) {
-        Write-Warning "Reparse point detected on root $CanonicalPath. Safely deleting junction link..."
-        $DirInfo.Delete($false)
-        return
-    }
-
-    # Stack-based walk to detect and unlink reparse points before descending
-    $Stack = New-Object System.Collections.Generic.Stack[System.IO.DirectoryInfo]
-    $DirsToDelete = New-Object System.Collections.Generic.List[System.IO.DirectoryInfo]
-    $Stack.Push($DirInfo)
-
+    if (-not [PathSecurity]::IsStrictSubPath($CanonicalPath, $AllowedParentCanonical)) { return }
+    $Leaf = [System.IO.Path]::GetFileName($CanonicalPath)
+    if (-not ($AllowedPrefixes | Where-Object { $Leaf.StartsWith($_, [System.StringComparison]::OrdinalIgnoreCase) })) { return }
+    $RootInfo = New-Object System.IO.DirectoryInfo($CanonicalPath); if (-not $RootInfo.Exists) { return }
+    if (($RootInfo.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) { [PathSecurity]::DeleteHandleBound($CanonicalPath, $AllowedParentCanonical) | Out-Null; return }
+    $Stack = New-Object System.Collections.Generic.Stack[System.IO.DirectoryInfo]; $DirsToDelete = New-Object System.Collections.ArrayList; $Stack.Push($RootInfo)
     while ($Stack.Count -gt 0) {
         $Current = $Stack.Pop()
-        $Current.Refresh()
-        if (($Current.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) {
-            Write-Warning "Reparse point detected on ($($Current.FullName)). Safely unlinking without traversal..."
-            $Current.Delete($false)
-            continue
-        }
-        $DirsToDelete.Add($Current)
-
+        $Resolved = [PathSecurity]::GetFinalPath($Current.FullName)
+        if (-not $Resolved -or (-not [PathSecurity]::IsStrictSubPath($Resolved, $AllowedParentCanonical))) { throw "Path escape: $($Current.FullName)" }
+        if (($Current.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) { [PathSecurity]::DeleteHandleBound($Current.FullName, $AllowedParentCanonical) | Out-Null; continue }
+        [void]$DirsToDelete.Add($Current)
         foreach ($Sub in $Current.GetDirectories()) {
-            $Sub.Refresh()
-            if (($Sub.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) {
-                Write-Warning "Reparse point detected inside $CanonicalPath ($($Sub.FullName)). Safely unlinking without traversal..."
-                $Sub.Delete($false)
-            } else {
-                $Stack.Push($Sub)
-            }
+            if (($Sub.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) { [PathSecurity]::DeleteHandleBound($Sub.FullName, $AllowedParentCanonical) | Out-Null }
+            else { $Stack.Push($Sub) }
         }
-        foreach ($File in $Current.GetFiles()) {
-            if ($File.IsReadOnly) { $File.IsReadOnly = $false }
-            $File.Delete()
-        }
+        foreach ($File in $Current.GetFiles()) { [PathSecurity]::DeleteHandleBound($File.FullName, $AllowedParentCanonical) | Out-Null }
     }
-
-    # Re-verify and delete unlinked directories from deepest child up to root
     for ($i = $DirsToDelete.Count - 1; $i -ge 0; $i--) {
         $Dir = $DirsToDelete[$i]
-        $Dir.Refresh()
-        if (($Dir.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) {
-            $Dir.Delete($false)
-        } else {
-            try { $Dir.Delete($false) } catch { }
+        if ($Dir.Exists -and (-not [PathSecurity]::DeleteHandleBound($Dir.FullName, $AllowedParentCanonical))) { try { $Dir.Delete($false) } catch { } }
+    }
+}
+
+function Copy-SafeDirectory([string]$SourceDir, [string]$DestDir, [string]$SrcRoot, [string]$DstRoot, [switch]$Prune) {
+    if (-not (Test-Path -LiteralPath $SourceDir)) { return }
+    $SourceCanonical = [System.IO.Path]::GetFullPath($SourceDir).TrimEnd('\', '/') + '\'
+    $SourceDirInfo = New-Object System.IO.DirectoryInfo($SourceCanonical)
+    if (($SourceDirInfo.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) { throw "Reparse point: $SourceCanonical" }
+    if (-not (Test-Path -LiteralPath $DestDir)) { New-Item -ItemType Directory -Path $DestDir -Force | Out-Null }
+    [PathSecurity]::AssertNotReparsePoint($DestDir, $DstRoot)
+    $Stack = New-Object System.Collections.Generic.Stack[System.IO.DirectoryInfo]; $Visited = New-Object System.Collections.ArrayList
+    $Stack.Push($SourceDirInfo)
+    while ($Stack.Count -gt 0) {
+        $CurrentDir = $Stack.Pop()
+        $ResolvedDir = [PathSecurity]::GetFinalPath($CurrentDir.FullName)
+        if (-not $ResolvedDir -or (-not [PathSecurity]::IsStrictSubPath($ResolvedDir, $SourceCanonical))) { throw "Path escape: $($CurrentDir.FullName)" }
+        if (($CurrentDir.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) { throw "Reparse dir: $($CurrentDir.FullName)" }
+        $Relative = if ($CurrentDir.FullName.Length -gt $SourceCanonical.Length) { $CurrentDir.FullName.Substring($SourceCanonical.Length).TrimStart('\', '/') } else { "" }
+        $CurrentTarget = if ($Relative) { Join-Path $DestDir $Relative } else { $DestDir }
+        if (-not (Test-Path -LiteralPath $CurrentTarget)) { New-Item -ItemType Directory -Path $CurrentTarget -Force | Out-Null }
+        [PathSecurity]::AssertNotReparsePoint($CurrentTarget, $DstRoot)
+        [void]$Visited.Add(@($CurrentTarget, $CurrentDir.FullName))
+        foreach ($File in $CurrentDir.GetFiles()) {
+            if ($Relative -eq "" -and $File.Name -eq "index.html") { continue }
+            if (($File.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) { throw "Reparse file: $($File.FullName)" }
+            [PathSecurity]::CopyFileHandleBound($File.FullName, (Join-Path $CurrentTarget $File.Name), $SrcRoot, $DstRoot)
+        }
+        foreach ($SubDir in $CurrentDir.GetDirectories()) {
+            if (($SubDir.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) { throw "Reparse dir: $($SubDir.FullName)" }
+            $Stack.Push($SubDir)
+        }
+    }
+    $RootIndex = Join-Path $SourceDir "index.html"
+    if (Test-Path -LiteralPath $RootIndex) { [PathSecurity]::CopyFileHandleBound($RootIndex, (Join-Path $DestDir "index.html"), $SrcRoot, $DstRoot) }
+    if ($Prune) {
+        foreach ($Pair in $Visited) {
+            $Tgt, $Src = $Pair
+            if (Test-Path -LiteralPath $Tgt) {
+                $TgtInfo = New-Object System.IO.DirectoryInfo($Tgt)
+                $TgtInfo.GetFiles() | Where-Object { -not (Test-Path -LiteralPath (Join-Path $Src $_.Name)) } | ForEach-Object { [PathSecurity]::DeleteHandleBound($_.FullName, $DstRoot) | Out-Null }
+                $TgtInfo.GetDirectories() | Where-Object { -not (Test-Path -LiteralPath (Join-Path $Src $_.Name)) } | ForEach-Object { Remove-SafeFolder $_.FullName $DstRoot @($_.Name) }
+            }
         }
     }
 }
 
-# Safe deletion for temporary build folders in TEMP with strict prefix containment
-function Remove-SafeTempFolder([string]$FolderPath) {
-    if (-not (Test-Path -LiteralPath $FolderPath)) { return }
-    $CanonicalPath = [System.IO.Path]::GetFullPath($FolderPath)
-    if (-not $CanonicalPath.StartsWith($TempDirCanonical, [System.StringComparison]::OrdinalIgnoreCase)) {
-        Write-Warning "Refusing to delete temp folder outside TEMP directory: $CanonicalPath"
-        return
-    }
-    $LeafName = [System.IO.Path]::GetFileName($CanonicalPath)
-    if (-not $LeafName.StartsWith("wine-tasting-build-$ProjectHash-", [System.StringComparison]::OrdinalIgnoreCase)) {
-        Write-Warning "Refusing to delete folder not matching project build prefix: $CanonicalPath"
-        return
-    }
-
-    $DirInfo = New-Object System.IO.DirectoryInfo($CanonicalPath)
-    if (-not $DirInfo.Exists) { return }
-
-    if (($DirInfo.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) {
-        $DirInfo.Delete($false)
-        return
-    }
-
-    $Stack = New-Object System.Collections.Generic.Stack[System.IO.DirectoryInfo]
-    $DirsToDelete = New-Object System.Collections.Generic.List[System.IO.DirectoryInfo]
-    $Stack.Push($DirInfo)
-
-    while ($Stack.Count -gt 0) {
-        $Current = $Stack.Pop()
-        $Current.Refresh()
-        if (($Current.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) {
-            $Current.Delete($false)
-            continue
-        }
-        $DirsToDelete.Add($Current)
-
-        foreach ($Sub in $Current.GetDirectories()) {
-            $Sub.Refresh()
-            if (($Sub.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) {
-                $Sub.Delete($false)
-            } else {
-                $Stack.Push($Sub)
-            }
-        }
-        foreach ($File in $Current.GetFiles()) {
-            if ($File.IsReadOnly) { $File.IsReadOnly = $false }
-            $File.Delete()
-        }
-    }
-
-    for ($i = $DirsToDelete.Count - 1; $i -ge 0; $i--) {
-        $Dir = $DirsToDelete[$i]
-        $Dir.Refresh()
-        if (($Dir.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) {
-            $Dir.Delete($false)
-        } else {
-            try { $Dir.Delete($false) } catch { }
-        }
-    }
-}
-
-# Outer try/catch/finally guarantees lock disposal and proper error propagation
 try {
-    # Startup sweep: Clean stale temporary build folders in TEMP belonging strictly to this project hash (older than 1 hour)
     Get-ChildItem -LiteralPath $env:TEMP -Filter "wine-tasting-build-$ProjectHash-*" -Directory -ErrorAction SilentlyContinue | ForEach-Object {
-        if ($_.LastWriteTime -lt (Get-Date).AddHours(-1)) {
-            try { Remove-SafeTempFolder $_.FullName } catch { }
-        }
+        if ($_.LastWriteTime -lt (Get-Date).AddHours(-1)) { Remove-SafeFolder $_.FullName $TempDirCanonical @("wine-tasting-build-$ProjectHash-") }
     }
 
-    # Startup sweep: Clean or recover any orphaned staging/backup folders from previous interrupted runs
-    $StaleBackups = Get-ChildItem -LiteralPath $ProjectDir -Filter "dist_backup_*" -Directory -ErrorAction SilentlyContinue
-    if ((-not (Test-Path -LiteralPath $TargetDist)) -and $StaleBackups) {
-        $MostRecentBackup = $StaleBackups | Sort-Object Name -Descending | Select-Object -First 1
-        if ($MostRecentBackup -and (($MostRecentBackup.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -eq 0)) {
-            Write-Host "Recovering orphaned distribution backup from interrupted previous run ($($MostRecentBackup.Name))..." -ForegroundColor Yellow
-            Rename-Item -LiteralPath $MostRecentBackup.FullName -NewName ([System.IO.Path]::GetFileName($TargetDist)) -Force
-        }
+    @("dist_staging_*", "dist_backup_*") | ForEach-Object {
+        Get-ChildItem -LiteralPath $ProjectDir -Filter $_ -Directory -ErrorAction SilentlyContinue |
+            ForEach-Object { Remove-SafeFolder $_.FullName $ProjectDirCanonical @("dist_staging_", "dist_backup_") }
     }
 
-    Get-ChildItem -LiteralPath $ProjectDir -Filter "dist_staging_*" -Directory -ErrorAction SilentlyContinue | ForEach-Object {
-        try { Remove-SafeStagingFolder $_.FullName } catch { }
-    }
-    Get-ChildItem -LiteralPath $ProjectDir -Filter "dist_backup_*" -Directory -ErrorAction SilentlyContinue | ForEach-Object {
-        try { Remove-SafeStagingFolder $_.FullName } catch { }
-    }
-
-    # Generate unique isolated temporary build directory scoped to this project hash
     $BuildDir = Join-Path $env:TEMP "wine-tasting-build-$ProjectHash-$BuildGuid"
-
-    # Locate Node/npm strictly from system PATH
-    $SystemNpm = Get-Command npm.cmd, npm -ErrorAction SilentlyContinue | Select-Object -First 1
-    if (-not $SystemNpm) {
-        throw "npm command could not be located in system PATH. Install Node.js globally to compile this application."
-    }
+    $SystemNpm = Get-Command npm.cmd, npm -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
+    if (-not $SystemNpm) { throw "npm not in PATH. Install Node.js." }
     $NpmCmd = $SystemNpm.Source
 
-    Write-Host "=========================================" -ForegroundColor Yellow
-    Write-Host "   Wine Tasting Web App Compilation" -ForegroundColor Yellow
-    Write-Host "=========================================" -ForegroundColor Yellow
-
-    Write-Host "1. Creating isolated build folder at $BuildDir..." -ForegroundColor Cyan
+    Write-Host "Compiling Wine Tasting App..." -ForegroundColor Yellow
     New-Item -ItemType Directory -Path $BuildDir -Force | Out-Null
+    $ds = New-Object System.Security.AccessControl.DirectorySecurity
+    $ds.SetAccessRuleProtection($true, $false); $ds.SetOwner($UserIdent.User)
+    $ds.SetAccessRule((New-Object System.Security.AccessControl.FileSystemAccessRule($UserIdent.User, "FullControl", "ContainerInherit, ObjectInherit", "None", "Allow")))
+    (Get-Item -LiteralPath $BuildDir).SetAccessControl($ds); [PathSecurity]::AssertNotReparsePoint($BuildDir, $TempDirCanonical)
 
-    Write-Host "2. Copying project files..." -ForegroundColor Cyan
-    Copy-Item -Path (Join-Path $ProjectDir "src") -Destination (Join-Path $BuildDir "src") -Recurse -Force
-    Copy-Item -Path (Join-Path $ProjectDir "package.json") -Destination (Join-Path $BuildDir "package.json") -Force
+    Write-Host "1. Copying files..." -ForegroundColor Cyan
+    Copy-SafeDirectory (Join-Path $ProjectDir "src") (Join-Path $BuildDir "src") $ProjectDirCanonical $TempDirCanonical
     
     $ProjectLockFile = Join-Path $ProjectDir "package-lock.json"
-    if (-not (Test-Path -LiteralPath $ProjectLockFile)) {
-        throw "package-lock.json is required for deterministic and secure builds. Run 'npm install' to generate a verified lockfile before building."
-    }
-    Copy-Item -Path $ProjectLockFile -Destination (Join-Path $BuildDir "package-lock.json") -Force
+    if (-not (Test-Path -LiteralPath $ProjectLockFile)) { throw "package-lock.json required." }
 
-    # Enforce strict allowlist for frontend public VITE_* environment variables
+    @("package.json", "package-lock.json", "vite.config.ts", "tsconfig.json", "tsconfig.node.json", "postcss.config.js", "tailwind.config.js", "index.html") | ForEach-Object {
+        $p = Join-Path $ProjectDir $_
+        if (Test-Path -LiteralPath $p) { [PathSecurity]::CopyFileHandleBound($p, (Join-Path $BuildDir $_), $ProjectDirCanonical, $TempDirCanonical) }
+    }
+
     $LocalEnv = Join-Path $ProjectDir ".env"
     if (Test-Path -LiteralPath $LocalEnv) {
-        $AllowedFrontendVars = @('VITE_SUPABASE_URL', 'VITE_SUPABASE_ANON_KEY', 'VITE_APP_TITLE', 'VITE_APP_VERSION')
+        [PathSecurity]::AssertNotReparsePoint($LocalEnv, $ProjectDirCanonical)
+        $AllowedVars = @('VITE_SUPABASE_URL', 'VITE_SUPABASE_ANON_KEY', 'VITE_APP_TITLE', 'VITE_APP_VERSION')
         $ViteEnvLines = @()
         Get-Content -LiteralPath $LocalEnv | ForEach-Object {
-            $Line = $_.Trim()
+            $Line = ($_.Trim() -replace '^(?i)export\s+', '').Trim()
             if ($Line -match '^VITE_') {
-                $VarName = ($Line -split '=')[0].Trim()
-                if ($VarName -notin $AllowedFrontendVars) {
-                    throw "Security violation in .env: Unapproved frontend variable '$VarName'. Only explicitly permitted public frontend variables may be bundled."
-                }
-                # Inspect anon key value to ensure no elevated privileges are attached
-                if ($VarName -eq 'VITE_SUPABASE_ANON_KEY') {
-                    $VarValue = ($Line -split '=', 2)[1].Trim()
-                    if ($VarValue -match '(?i)(sb_secret_|service_role|master_key)') {
-                        throw "Security violation in .env: Sensitive key pattern detected in variable '$VarName'."
-                    }
-                    if ($VarValue.StartsWith("sb_publishable_")) {
-                        # Modern Supabase publishable key format
-                    } else {
-                        $TokenParts = $VarValue.Split('.')
-                        if ($TokenParts.Length -lt 2) {
-                            throw "Security violation in .env: '$VarName' must be a valid JWT or publishable token."
-                        }
-                        $IsAnonRole = $false
-                        try {
-                            $B64 = $TokenParts[1].Replace('-', '+').Replace('_', '/')
-                            switch ($B64.Length % 4) { 2 { $B64 += "==" } 3 { $B64 += "=" } }
-                            $PayloadBytes = [System.Convert]::FromBase64String($B64)
-                            $PayloadJson = [System.Text.Encoding]::UTF8.GetString($PayloadBytes)
-                            $PayloadObj = $PayloadJson | ConvertFrom-Json
-                            if ($PayloadObj.role -eq 'anon') {
-                                $IsAnonRole = $true
-                            }
-                        } catch {
-                            throw "Security violation in .env: Malformed JWT token in variable '$VarName'."
-                        }
-                        if (-not $IsAnonRole) {
-                            throw "Security violation in .env: JWT token in variable '$VarName' does not contain an anon role claim."
-                        }
-                    }
-                }
-                $ViteEnvLines += $Line
+                $k, $v = ($Line -split '=', 2).Trim()
+                $v = $v.Trim('"').Trim("'")
+                if ($k -notin $AllowedVars) { throw "Unapproved variable in .env: $k" }
+                if ($v -match '(?i)(sb_secret_|service_role|master_key)') { throw "Sensitive pattern in .env: $k" }
+                if ($v -match '^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$' -and (-not (Test-AnonJwt $v))) { throw "Invalid JWT in .env: $k" }
+                if ($k -eq 'VITE_SUPABASE_URL' -and $v -notmatch '\Ahttps:\/\/[A-Za-z0-9._-]+\.supabase\.co\/?\z') { throw "Invalid VITE_SUPABASE_URL format." }
+                if ($k -eq 'VITE_SUPABASE_ANON_KEY' -and (-not ($v.StartsWith("sb_publishable_") -or ($v -match '^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$')))) { throw "Invalid VITE_SUPABASE_ANON_KEY format." }
+                $ViteEnvLines += "$k=$v"
             }
         }
         if ($ViteEnvLines.Count -gt 0) {
-            $TargetEnv = Join-Path $BuildDir ".env"
-            [System.IO.File]::WriteAllLines($TargetEnv, $ViteEnvLines)
+            [PathSecurity]::WriteFileHandleBound($BuildDir, ".env", ($ViteEnvLines -join "`r`n"), $TempDirCanonical)
         }
     }
     
-    # Optional assets
-    if (Test-Path -LiteralPath (Join-Path $ProjectDir "public")) {
-        Copy-Item -Path (Join-Path $ProjectDir "public") -Destination (Join-Path $BuildDir "public") -Recurse -Force
-    }
-    if (Test-Path -LiteralPath (Join-Path $ProjectDir "tsconfig.node.json")) {
-        Copy-Item -Path (Join-Path $ProjectDir "tsconfig.node.json") -Destination (Join-Path $BuildDir "tsconfig.node.json") -Force
+    $PubDir = Join-Path $ProjectDir "public"; if (Test-Path -LiteralPath $PubDir) { Copy-SafeDirectory $PubDir (Join-Path $BuildDir "public") $ProjectDirCanonical $TempDirCanonical }
+
+    $SafeEnv = @('PATH','PATHEXT','SYSTEMROOT','TEMP','TMP','USERNAME','USERPROFILE','HOMEPATH','LOCALAPPDATA','APPDATA','COMPUTERNAME','OS','PROCESSOR_ARCHITECTURE','PSMODULEPATH','COMSPEC')
+    Get-ChildItem env: | Where-Object { $_.Name -like 'VITE_*' -or ($_.Name -match '(?i)(TOKEN|SECRET|KEY|PASSWORD|CREDENTIAL|SESSION|AUTH)' -and $_.Name -notin $SafeEnv) } | ForEach-Object {
+        $PreservedEnvVars[$_.Name] = $_.Value; Remove-Item -LiteralPath "env:$($_.Name)" -Force -ErrorAction SilentlyContinue
     }
 
-    Copy-Item -Path (Join-Path $ProjectDir "vite.config.ts") -Destination (Join-Path $BuildDir "vite.config.ts") -Force
-    Copy-Item -Path (Join-Path $ProjectDir "tsconfig.json") -Destination (Join-Path $BuildDir "tsconfig.json") -Force
-    Copy-Item -Path (Join-Path $ProjectDir "postcss.config.js") -Destination (Join-Path $BuildDir "postcss.config.js") -Force
-    Copy-Item -Path (Join-Path $ProjectDir "tailwind.config.js") -Destination (Join-Path $BuildDir "tailwind.config.js") -Force
-    Copy-Item -Path (Join-Path $ProjectDir "index.html") -Destination (Join-Path $BuildDir "index.html") -Force
+    Write-Host "2. Installing dependencies..." -ForegroundColor Cyan
+    Set-Location $BuildDir; & $NpmCmd ci --ignore-scripts --no-audit --no-fund
+    if ($LASTEXITCODE -ne 0) { throw "npm ci failed ($LASTEXITCODE)" }
 
-    Write-Host "3. Installing dependencies in local build folder..." -ForegroundColor Cyan
-    Set-Location $BuildDir
-    # Install dependencies with --ignore-scripts to suppress package install lifecycle hooks
-    & $NpmCmd ci --ignore-scripts --no-audit --no-fund
-    if ($LASTEXITCODE -ne 0) {
-        throw "Dependency installation failed with exit code $LASTEXITCODE"
-    }
-
-    Write-Host "4. Compiling web application..." -ForegroundColor Cyan
-    # Scrub sensitive ambient environment credentials prior to executing build scripts
-    $SensitiveEnvVars = @('GITHUB_TOKEN', 'GH_TOKEN', 'AWS_ACCESS_KEY_ID', 'AWS_SECRET_ACCESS_KEY', 'AWS_SESSION_TOKEN', 'DATABASE_URL', 'STRIPE_SECRET_KEY', 'SUPABASE_SERVICE_ROLE_KEY')
-    foreach ($Var in $SensitiveEnvVars) {
-        if (Test-Path -LiteralPath "env:$Var") {
-            Remove-Item -LiteralPath "env:$Var" -Force -ErrorAction SilentlyContinue
-        }
-    }
-
-    & $NpmCmd run build
-    if ($LASTEXITCODE -ne 0) {
-        throw "npm run build failed with exit code $LASTEXITCODE"
-    }
+    Write-Host "3. Compiling..." -ForegroundColor Cyan
+    & $NpmCmd run build; if ($LASTEXITCODE -ne 0) { throw "npm run build failed ($LASTEXITCODE)" }
 
     $CompiledDist = Join-Path $BuildDir "dist"
-    $CompiledIndex = Join-Path $CompiledDist "index.html"
-    if (-not (Test-Path -LiteralPath $CompiledIndex)) {
-        throw "Verification failed: Compiled output index.html not found in $CompiledDist"
-    }
+    if (-not (Test-Path -LiteralPath (Join-Path $CompiledDist "index.html"))) { throw "index.html not found in $CompiledDist" }
+
+    Write-Host "4. Scanning artifacts..." -ForegroundColor Cyan
+    Assert-SecretScan $CompiledDist
+    Write-Host "Bundle secret scan passed." -ForegroundColor Green
 
     Set-Location $OriginalLocation
 
-    Write-Host "5. Publishing verified distribution..." -ForegroundColor Cyan
-    Copy-Item -Path $CompiledDist -Destination $StagingDist -Recurse -Force
-
-    # Two-phase publication swap: existing dist is preserved to backup, staging is promoted to dist
-    # (Rollback in finally block and startup sweep guarantee recovery if interrupted)
-    if (Test-Path -LiteralPath $TargetDist) {
-        Rename-Item -LiteralPath $TargetDist -NewName ([System.IO.Path]::GetFileName($BackupDist)) -Force
-    }
-    Rename-Item -LiteralPath $StagingDist -NewName ([System.IO.Path]::GetFileName($TargetDist)) -Force
-
-    # Output is now verified and active in target directory
+    Write-Host "5. Publishing distribution..." -ForegroundColor Cyan
+    Copy-SafeDirectory $CompiledDist $TargetDist $TempDirCanonical $ProjectDirCanonical -Prune
+    Assert-SecretScan $TargetDist
+    if (-not (Test-Path -LiteralPath (Join-Path $TargetDist "index.html"))) { throw ("index.html not found in " + $TargetDist) }
     $BuildSucceeded = $true
-
-    # Clean up backup folder without aborting successful build
-    if (Test-Path -LiteralPath $BackupDist) {
-        try {
-            Remove-SafeStagingFolder $BackupDist
-        } catch {
-            Write-Warning "Could not immediately remove previous build backup ($BackupDist): $_"
-        }
-    }
 } catch {
     Set-Location $OriginalLocation
     Write-Host "BUILD ERROR: $_" -ForegroundColor Red
     $BuildSucceeded = $false
 } finally {
     Set-Location $OriginalLocation
-    Write-Host "6. Cleaning up temporary build artifacts..." -ForegroundColor Cyan
-
-    # Guarded cleanup: temporary build directory
-    try {
-        if ($BuildDir -and (Test-Path -LiteralPath $BuildDir)) {
-            Remove-SafeTempFolder $BuildDir
-        }
-    } catch {
-        Write-Warning "Could not delete temporary build directory ($BuildDir): $_"
-    }
-
-    # Guarded cleanup: rollback if build did not succeed
-    try {
-        if (-not $BuildSucceeded) {
-            if (Test-Path -LiteralPath $StagingDist) {
-                Remove-SafeStagingFolder $StagingDist
-            }
-            if ((Test-Path -LiteralPath $BackupDist) -and (-not (Test-Path -LiteralPath $TargetDist))) {
-                Rename-Item -LiteralPath $BackupDist -NewName ([System.IO.Path]::GetFileName($TargetDist)) -Force
-            }
-        }
-    } catch {
-        Write-Warning "Error during build rollback: $_"
-    }
-
-    # Guarded cleanup: release and dispose build lock
-    try {
-        if ($LockFile) {
-            $LockFile.Close()
-            $LockFile.Dispose()
-        }
-    } catch {
-        Write-Warning "Error disposing build lock: $_"
-    }
-
-    # Guarded cleanup: best-effort removal of project lock file
-    try {
-        if (Test-Path -LiteralPath $LockFilePath) {
-            Remove-Item -LiteralPath $LockFilePath -Force -ErrorAction SilentlyContinue
-        }
-    } catch { }
+    Write-Host "6. Cleaning up..." -ForegroundColor Cyan
+    try { if ($BuildDir -and (Test-Path -LiteralPath $BuildDir)) { Remove-SafeFolder $BuildDir $TempDirCanonical @("wine-tasting-build-$ProjectHash-") } } catch { }
+    try { if ($LockFile) { $LockFile.Close(); $LockFile.Dispose() } } catch { }
+    try { if ($PreservedEnvVars) { foreach ($e in $PreservedEnvVars.GetEnumerator()) { Set-Item -LiteralPath "env:$($e.Key)" -Value $e.Value -ErrorAction SilentlyContinue } } } catch { }
 }
 
 if ($BuildSucceeded) {
-    Write-Host "-----------------------------------------" -ForegroundColor Green
-    Write-Host "SUCCESS: Build complete! Verified distribution files in:" -ForegroundColor Green
-    Write-Host $TargetDist -ForegroundColor White
-    Write-Host "=========================================" -ForegroundColor Green
+    Write-Host "SUCCESS: Build complete! Output: $TargetDist" -ForegroundColor Green
     exit 0
 } else {
     Write-Host "BUILD FAILED: See error log above." -ForegroundColor Red
