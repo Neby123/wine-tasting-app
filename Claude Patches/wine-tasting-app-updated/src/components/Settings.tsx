@@ -49,7 +49,15 @@ export default function Settings({
     }
 
     // Save host passcode to localStorage
-    localStorage.setItem('WINE_TASTING_HOST_PASSCODE', hostPasscode.trim());
+    const oldPasscode = localStorage.getItem('WINE_TASTING_HOST_PASSCODE') || '';
+    const newPasscode = hostPasscode.trim();
+    localStorage.setItem('WINE_TASTING_HOST_PASSCODE', newPasscode);
+
+    if (oldPasscode !== newPasscode) {
+      setSavedMsg("Host passcode updated! Re-initializing connection...");
+      setTimeout(() => window.location.reload(), 1000);
+      return;
+    }
 
     setSavedMsg("Profile updated successfully!");
     setTimeout(() => setSavedMsg(''), 2000);
@@ -73,21 +81,38 @@ export default function Settings({
 
   // Generate share link
   const getShareLink = () => {
-    const url = localStorage.getItem('WINE_TASTING_SB_URL');
-    const key = localStorage.getItem('WINE_TASTING_SB_KEY');
-    if (!url || !key) return '';
+    const url = localStorage.getItem('WINE_TASTING_SB_URL') || (import.meta.env.VITE_SUPABASE_URL as string);
+    const key = localStorage.getItem('WINE_TASTING_SB_KEY') || (import.meta.env.VITE_SUPABASE_ANON_KEY as string);
+    if (!url || !key) return window.location.origin + window.location.pathname;
 
     const baseUrl = window.location.origin + window.location.pathname;
-    return `${baseUrl}?sb_url=${encodeURIComponent(url)}&sb_key=${encodeURIComponent(key)}`;
+    return `${baseUrl}?sb_url=${encodeURIComponent(url.trim())}&sb_key=${encodeURIComponent(key.trim())}`;
   };
 
   const shareLink = getShareLink();
 
-  const handleCopyLink = () => {
+  const handleCopyLink = async () => {
     if (!shareLink) return;
-    navigator.clipboard.writeText(shareLink);
-    setLinkCopied(true);
-    setTimeout(() => setLinkCopied(false), 2000);
+    try {
+      if (navigator.clipboard && window.isSecureContext) {
+        await navigator.clipboard.writeText(shareLink);
+      } else {
+        // Fallback for non-HTTPS contexts (e.g. local network)
+        const textarea = document.createElement('textarea');
+        textarea.value = shareLink;
+        textarea.style.position = 'fixed';
+        textarea.style.opacity = '0';
+        document.body.appendChild(textarea);
+        textarea.select();
+        document.execCommand('copy');
+        document.body.removeChild(textarea);
+      }
+      setLinkCopied(true);
+      setTimeout(() => setLinkCopied(false), 2000);
+    } catch (err) {
+      console.error('Copy failed:', err);
+      alert('Could not copy link automatically. Please select and copy this URL manually:\n\n' + shareLink);
+    }
   };
 
   return (
@@ -157,7 +182,7 @@ export default function Settings({
                 <Shield className="w-4 h-4 text-wine-400" /> Host Controls
               </label>
               <p className="text-xs text-slate-500">
-                Enables resolving bracket match winners, resetting sessions, and finalizing datasets.
+                Enables unbagging and mapping blind bottles to wines, resetting sessions, and finalizing datasets.
               </p>
             </div>
             <button

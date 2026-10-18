@@ -1,5 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
-import { WineSession, Wine, Vote, HistoricalTasting, WishlistItem, WineEnrichment } from './mockData';
+import { WineSession, Wine, Vote, HistoricalTasting, WishlistItem, WineEnrichment, HISTORICAL_SESSIONS } from './mockData';
 
 const getSBConfig = () => {
   // Check URL params first (useful for guest invite links)
@@ -18,23 +18,27 @@ const getSBConfig = () => {
     return { url: urlParam, key: keyParam };
   }
 
-  const lsUrl = localStorage.getItem('WINE_TASTING_SB_URL');
-  const lsKey = localStorage.getItem('WINE_TASTING_SB_KEY');
+  const rawUrl = (urlParam || localStorage.getItem('WINE_TASTING_SB_URL') || (import.meta.env.VITE_SUPABASE_URL as string) || '').trim();
+  const rawKey = (keyParam || localStorage.getItem('WINE_TASTING_SB_KEY') || (import.meta.env.VITE_SUPABASE_ANON_KEY as string) || '').trim();
   
-  if (lsUrl && lsKey) {
-    return { url: lsUrl, key: lsKey };
+  if (rawUrl && rawKey) {
+    const url = rawUrl.replace(/\/+$/, '');
+    return { url, key: rawKey };
   }
   return null;
 };
 
-// Synchronously ensure voter token exists
+// Synchronously ensure voter token exists (RFC4122 compliant UUID)
 const getOrGenerateVoterToken = () => {
   let token = localStorage.getItem('WINE_TASTING_VOTER_TOKEN');
   if (!token) {
     if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
       token = crypto.randomUUID();
     } else {
-      token = 'voter-' + Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
+      const uuidMask = '10000000-1000-4000-8000-100000000000';
+      token = uuidMask.replace(/[018]/g, c =>
+        (+c ^ (typeof crypto !== 'undefined' && crypto.getRandomValues ? crypto.getRandomValues(new Uint8Array(1))[0] : Math.floor(Math.random() * 16)) & 15 >> +c / 4).toString(16)
+      );
     }
     localStorage.setItem('WINE_TASTING_VOTER_TOKEN', token);
   }
@@ -77,27 +81,50 @@ export const db = {
 
   getActiveSession: async (): Promise<WineSession | null> => {
     const client = ensureClient();
-    const { data, error } = await client
+    // 1. Look for currently active session (setup or tasting)
+    const { data: active, error: activeErr } = await client
       .from('sessions')
       .select('*')
       .neq('status', 'completed')
+      .order('created_at', { ascending: false })
       .limit(1)
       .maybeSingle();
-    if (error) throw error;
-    return data;
+    if (activeErr) throw activeErr;
+    if (active) return active;
+
+    // 2. If no setup/tasting session, check for a session completed today
+    const today = new Date().toISOString().split('T')[0];
+    const { data: recent, error: recentErr } = await client
+      .from('sessions')
+      .select('*')
+      .eq('status', 'completed')
+      .gte('date', today)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (recentErr) throw recentErr;
+    return recent || null;
   },
 
-  createSession: async (name: string): Promise<WineSession> => {
+  createSession: async (name: string, date?: string): Promise<WineSession> => {
     const client = ensureClient();
-    // Auto-complete any active sessions
-    await client
+    // Complete previously open active sessions if any exist
+    const { data: activeSessions } = await client
       .from('sessions')
-      .update({ status: 'completed' })
+      .select('id')
       .neq('status', 'completed');
+
+    if (activeSessions && activeSessions.length > 0) {
+      const activeIds = activeSessions.map(s => s.id);
+      await client
+        .from('sessions')
+        .update({ status: 'completed' })
+        .in('id', activeIds);
+    }
 
     const newSession = {
       name,
-      date: new Date().toISOString().split('T')[0],
+      date: date || new Date().toISOString().split('T')[0],
       status: 'setup'
     };
 
@@ -179,7 +206,17 @@ export const db = {
         .eq('id', wineId)
     );
 
-    await Promise.all(updates);
+    const results = await Promise.all(updates);
+    const errors = results.filter(r => r.error);
+    if (errors.length > 0) {
+      // Rollback any partially revealed wines
+      await Promise.all(
+        Object.values(mapping).map(wineId =>
+          client.from('wines').update({ revealed: false, blind_label: null }).eq('id', wineId)
+        )
+      );
+      throw new Error(`Failed to reveal wines: ${errors[0].error?.message || 'Update failed'}`);
+    }
 
     // Fetch all updated wines for this session
     const { data, error } = await client
@@ -204,7 +241,18 @@ export const db = {
 
   submitVote: async (vote: Omit<Vote, 'id'>): Promise<Vote> => {
     const client = ensureClient();
-    // Check for existing vote to overwrite
+    // Try atomic upsert if unique constraint exists
+    const { data: upserted, error: upsertErr } = await client
+      .from('votes')
+      .upsert(vote, { onConflict: 'session_id,voter_name,match_id' })
+      .select()
+      .maybeSingle();
+
+    if (!upsertErr && upserted) {
+      return upserted;
+    }
+
+    // Fallback: Check for existing vote to overwrite
     const { data: existing, error: existErr } = await client
       .from('votes')
       .select('id')
@@ -236,29 +284,62 @@ export const db = {
   },
 
   getHistory: async (): Promise<HistoricalTasting[]> => {
-    const client = ensureClient();
-    const { data, error } = await client
-      .from('history')
-      .select('*')
-      .order('date', { ascending: false });
+    try {
+      const client = ensureClient();
+      const { data, error } = await client
+        .from('history')
+        .select('*')
+        .order('date', { ascending: false });
 
-    if (error) throw error;
-    
-    return (data || []).map(row => ({
-      id: row.id,
-      name: row.name,
-      date: row.date,
-      winnerName: row.winner_name,
-      winnerPrice: Number(row.winner_price),
-      winnerBroughtBy: row.winner_brought_by,
-      winesCount: row.wines_count,
-      groupWinner: row.group_winner,
-      secondPlace: row.second_place,
-      bestValue: row.best_value,
-      giantKiller: row.giant_killer || undefined,
-      wines: row.wines,
-      votes: row.votes
-    }));
+      if (error) {
+        console.warn("Supabase history query returned error, using fallback:", error);
+        return HISTORICAL_SESSIONS;
+      }
+      
+      if (!data || data.length === 0) {
+        console.log("History table is empty. Auto-seeding historical sessions into Supabase...");
+        try {
+          const rowsToInsert = HISTORICAL_SESSIONS.map((session: HistoricalTasting) => ({
+            id: session.id,
+            name: session.name,
+            date: session.date,
+            winner_name: session.winnerName,
+            winner_price: session.winnerPrice,
+            winner_brought_by: session.winnerBroughtBy,
+            wines_count: session.winesCount,
+            group_winner: session.groupWinner,
+            second_place: session.secondPlace,
+            best_value: session.bestValue,
+            giant_killer: session.giantKiller || null,
+            wines: session.wines,
+            votes: session.votes || []
+          }));
+          await client.from('history').upsert(rowsToInsert);
+        } catch (seedErr) {
+          console.warn("Failed to auto-seed history into Supabase:", seedErr);
+        }
+        return HISTORICAL_SESSIONS;
+      }
+
+      return data.map(row => ({
+        id: row.id,
+        name: row.name,
+        date: row.date,
+        winnerName: row.winner_name,
+        winnerPrice: Number(row.winner_price),
+        winnerBroughtBy: row.winner_brought_by,
+        winesCount: row.wines_count,
+        groupWinner: row.group_winner,
+        secondPlace: row.second_place,
+        bestValue: row.best_value,
+        giantKiller: row.giant_killer || undefined,
+        wines: row.wines,
+        votes: row.votes
+      }));
+    } catch (err) {
+      console.warn("getHistory caught error, returning HISTORICAL_SESSIONS fallback:", err);
+      return HISTORICAL_SESSIONS;
+    }
   },
 
   addHistorySession: async (session: HistoricalTasting): Promise<void> => {
@@ -290,19 +371,27 @@ export const db = {
   // --- Wishlist ("buy again") ---------------------------------------------
 
   getWishlist: async (voterName?: string): Promise<WishlistItem[]> => {
-    const client = ensureClient();
-    let query = client
-      .from('wishlist')
-      .select('*')
-      .order('created_at', { ascending: false });
+    try {
+      const client = ensureClient();
+      let query = client
+        .from('wishlist')
+        .select('*')
+        .order('created_at', { ascending: false });
 
-    if (voterName) {
-      query = query.eq('voter_name', voterName);
+      if (voterName) {
+        query = query.eq('voter_name', voterName);
+      }
+
+      const { data, error } = await query;
+      if (error) {
+        console.warn("getWishlist query error, returning empty array:", error);
+        return [];
+      }
+      return (data || []) as WishlistItem[];
+    } catch (err) {
+      console.warn("getWishlist caught error, returning empty array:", err);
+      return [];
     }
-
-    const { data, error } = await query;
-    if (error) throw error;
-    return (data || []) as WishlistItem[];
   },
 
   addWishlistItem: async (item: Omit<WishlistItem, 'id' | 'created_at'>): Promise<WishlistItem> => {
@@ -317,6 +406,7 @@ export const db = {
   },
 
   removeWishlistItem: async (id: string): Promise<void> => {
+    if (!id || id.startsWith('wish-')) return; // Skip temp local IDs to avoid Postgres UUID type error
     const client = ensureClient();
     const { error } = await client
       .from('wishlist')

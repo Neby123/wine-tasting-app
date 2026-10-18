@@ -34,13 +34,18 @@ export default function App() {
   const [currentTab, setCurrentTab] = useState<TabValue>(getTabFromHash);
   
   // New session input
-  const [newSessionName, setNewSessionName] = useState('Brut Force');
+  const [newSessionName, setNewSessionName] = useState('Fifty Shades of Grigio');
+  const [newSessionDate, setNewSessionDate] = useState('2026-11-14');
   const [creatingSession, setCreatingSession] = useState(false);
+
+  const loadSeqRef = React.useRef(0);
 
   // Load active session and data
   const loadData = async () => {
+    const seq = ++loadSeqRef.current;
     try {
       const session = await db.getActiveSession();
+      if (seq !== loadSeqRef.current) return;
       setActiveSession(session);
       
       if (session) {
@@ -48,6 +53,7 @@ export default function App() {
           db.getWines(session.id),
           db.getVotes(session.id)
         ]);
+        if (seq !== loadSeqRef.current) return;
         setWines(winesData);
         setVotes(votesData);
       } else {
@@ -57,7 +63,9 @@ export default function App() {
     } catch (err) {
       console.error("Error loading database:", err);
     } finally {
-      setLoading(false);
+      if (seq === loadSeqRef.current) {
+        setLoading(false);
+      }
     }
   };
 
@@ -147,12 +155,21 @@ export default function App() {
           console.log('Realtime session update payload:', payload);
           const newSession = payload.new as WineSession;
           // Guard against DELETE events which return empty {} for payload.new
-          if (!newSession || !newSession.id || newSession.status === 'completed') {
+          if (!newSession || !newSession.id) {
             setActiveSession(null);
             setWines([]);
             setVotes([]);
           } else {
             setActiveSession(newSession);
+            if (newSession.status === 'completed') {
+              const [w, v] = await Promise.all([
+                db.getWines(newSession.id),
+                db.getVotes(newSession.id)
+              ]);
+              setWines(w);
+              setVotes(v);
+              setCurrentTab('dashboard');
+            }
           }
         }
       )
@@ -225,7 +242,7 @@ export default function App() {
 
     setCreatingSession(true);
     try {
-      const session = await db.createSession(newSessionName.trim());
+      const session = await db.createSession(newSessionName.trim(), newSessionDate.trim());
       setActiveSession(session);
       setWines([]);
       setVotes([]);
@@ -376,8 +393,8 @@ export default function App() {
       // Add to archive
       await db.addHistorySession(report);
 
+      setWines(updatedWines);
       setActiveSession(updatedSession);
-      await loadData();
       setCurrentTab('dashboard');
     } catch (err) {
       console.error(err);
@@ -388,7 +405,7 @@ export default function App() {
   };
 
   const handleResetSession = async () => {
-    if (!window.confirm("Are you sure you want to delete this session and restart? All current entries and votes will be lost.")) return;
+    if (!window.confirm("Are you sure you want to end this tasting session and start fresh?")) return;
     if (!activeSession) return;
     
     setLoading(true);
@@ -397,7 +414,7 @@ export default function App() {
       setActiveSession(null);
       setWines([]);
       setVotes([]);
-      setCurrentTab('settings');
+      setCurrentTab('intake');
     } catch (err) {
       console.error(err);
     } finally {
@@ -467,11 +484,16 @@ export default function App() {
 
         {/* Global User status info */}
         <nav className="flex flex-wrap items-center bg-slate-950/60 p-1 border border-slate-850 rounded-xl text-xs font-semibold gap-1">
-          {!activeSession && (
+          {(!activeSession || activeSession.status === 'completed') && (
             <button
-              onClick={() => setCurrentTab('intake')}
+              onClick={() => {
+                setActiveSession(null);
+                setWines([]);
+                setVotes([]);
+                setCurrentTab('intake');
+              }}
               className={`px-4 py-2 rounded-lg transition-colors flex items-center gap-1.5 ${
-                currentTab === 'intake'
+                !activeSession && currentTab === 'intake'
                   ? 'bg-wine-850 text-wine-200' 
                   : 'text-slate-400 hover:text-slate-200'
               }`}
@@ -609,10 +631,23 @@ export default function App() {
                   <input
                     type="text"
                     required
-                    placeholder="e.g. Day de Rosé"
+                    placeholder="e.g. Fifty Shades of Grigio"
                     value={newSessionName}
                     onChange={(e) => setNewSessionName(e.target.value)}
                     className="w-full px-3 py-2 bg-slate-950 border border-slate-800 focus:border-wine-500 rounded-lg text-slate-200 text-sm focus:outline-none focus:ring-1 focus:ring-wine-500 font-semibold"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1">
+                    Event Date
+                  </label>
+                  <input
+                    type="date"
+                    required
+                    value={newSessionDate}
+                    onChange={(e) => setNewSessionDate(e.target.value)}
+                    className="w-full px-3 py-2 bg-slate-950 border border-slate-800 focus:border-wine-500 rounded-lg text-slate-200 text-sm focus:outline-none focus:ring-1 focus:ring-wine-500 font-semibold font-mono"
                   />
                 </div>
 

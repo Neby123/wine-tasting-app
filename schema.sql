@@ -53,7 +53,7 @@ BEGIN
 EXCEPTION WHEN OTHERS THEN
   RETURN '';
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp;
 
 -- Votes table: tracks individual tastings of blind pairings
 CREATE TABLE votes (
@@ -70,7 +70,8 @@ CREATE TABLE votes (
     NULLIF(get_request_header('x-voter-token'), ''),
     gen_random_uuid()::text
   )::uuid,
-  created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now())
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()),
+  CONSTRAINT votes_session_voter_match_unique UNIQUE (session_id, voter_name, match_id)
 );
 
 -- History table: tracks completed tournament archives
@@ -119,10 +120,13 @@ DECLARE
   actual_code TEXT;
 BEGIN
   passed_code := get_request_header('x-host-passcode');
+  IF passed_code IS NULL OR trim(passed_code) = '' THEN
+    RETURN false;
+  END IF;
   SELECT value INTO actual_code FROM app_settings WHERE key = 'host_passcode';
   RETURN passed_code = actual_code;
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp;
 
 GRANT EXECUTE ON FUNCTION get_request_header(TEXT) TO PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION check_is_host() TO PUBLIC, anon, authenticated;
@@ -133,11 +137,22 @@ CREATE POLICY "Allow host write on sessions" ON sessions FOR ALL USING (check_is
 
 -- RLS Policies for wines
 CREATE POLICY "Allow public read on wines" ON wines FOR SELECT USING (true);
+CREATE POLICY "Allow guest insert on wines during setup" ON wines FOR INSERT 
+WITH CHECK (
+  EXISTS (
+    SELECT 1 FROM sessions WHERE id = wines.session_id AND status = 'setup'
+  )
+  OR check_is_host()
+);
 CREATE POLICY "Allow host write on wines" ON wines FOR ALL USING (check_is_host());
 
 -- RLS Policies for votes
 CREATE POLICY "Allow public read on votes" ON votes FOR SELECT USING (true);
-CREATE POLICY "Allow public insert on votes" ON votes FOR INSERT WITH CHECK (true);
+CREATE POLICY "Allow authenticated voter insert on votes" ON votes FOR INSERT 
+WITH CHECK (
+  get_request_header('x-voter-token') <> '' 
+  AND voter_token = get_request_header('x-voter-token')::uuid
+);
 CREATE POLICY "Allow voter update on votes" ON votes FOR UPDATE 
 USING (
   voter_token::text = get_request_header('x-voter-token')
@@ -178,7 +193,11 @@ CREATE TABLE wishlist (
 ALTER TABLE wishlist ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY "Allow public read on wishlist"   ON wishlist FOR SELECT USING (true);
-CREATE POLICY "Allow public insert on wishlist" ON wishlist FOR INSERT WITH CHECK (true);
+CREATE POLICY "Allow owner insert on wishlist"  ON wishlist FOR INSERT 
+WITH CHECK (
+  get_request_header('x-voter-token') <> '' 
+  AND voter_token = get_request_header('x-voter-token')::uuid
+);
 CREATE POLICY "Allow owner update on wishlist"  ON wishlist FOR UPDATE
   USING (voter_token::text = get_request_header('x-voter-token'))
   WITH CHECK (voter_token::text = get_request_header('x-voter-token'));

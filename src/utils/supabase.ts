@@ -48,7 +48,7 @@ const getOrGenerateVoterToken = () => {
 const getHeaders = () => {
   return {
     'x-voter-token': getOrGenerateVoterToken(),
-    'x-host-passcode': localStorage.getItem('WINE_TASTING_HOST_PASSCODE') || '1234'
+    'x-host-passcode': localStorage.getItem('WINE_TASTING_HOST_PASSCODE') || ''
   };
 };
 
@@ -81,28 +81,50 @@ export const db = {
 
   getActiveSession: async (): Promise<WineSession | null> => {
     const client = ensureClient();
-    const { data, error } = await client
+    // 1. Look for currently active session (setup or tasting)
+    const { data: active, error: activeErr } = await client
       .from('sessions')
       .select('*')
       .neq('status', 'completed')
       .order('created_at', { ascending: false })
       .limit(1)
       .maybeSingle();
-    if (error) throw error;
-    return data;
+    if (activeErr) throw activeErr;
+    if (active) return active;
+
+    // 2. If no setup/tasting session, check for a session completed today
+    const today = new Date().toISOString().split('T')[0];
+    const { data: recent, error: recentErr } = await client
+      .from('sessions')
+      .select('*')
+      .eq('status', 'completed')
+      .gte('date', today)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (recentErr) throw recentErr;
+    return recent || null;
   },
 
-  createSession: async (name: string): Promise<WineSession> => {
+  createSession: async (name: string, date?: string): Promise<WineSession> => {
     const client = ensureClient();
-    // Auto-complete any active sessions
-    await client
+    // Complete previously open active sessions if any exist
+    const { data: activeSessions } = await client
       .from('sessions')
-      .update({ status: 'completed' })
+      .select('id')
       .neq('status', 'completed');
+
+    if (activeSessions && activeSessions.length > 0) {
+      const activeIds = activeSessions.map(s => s.id);
+      await client
+        .from('sessions')
+        .update({ status: 'completed' })
+        .in('id', activeIds);
+    }
 
     const newSession = {
       name,
-      date: new Date().toISOString().split('T')[0],
+      date: date || new Date().toISOString().split('T')[0],
       status: 'setup'
     };
 
@@ -185,9 +207,15 @@ export const db = {
     );
 
     const results = await Promise.all(updates);
-    // Check each update result for errors
-    for (const result of results) {
-      if (result.error) throw result.error;
+    const errors = results.filter(r => r.error);
+    if (errors.length > 0) {
+      // Rollback any partially revealed wines
+      await Promise.all(
+        Object.values(mapping).map(wineId =>
+          client.from('wines').update({ revealed: false, blind_label: null }).eq('id', wineId)
+        )
+      );
+      throw new Error(`Failed to reveal wines: ${errors[0].error?.message || 'Update failed'}`);
     }
 
     // Fetch all updated wines for this session
@@ -213,7 +241,18 @@ export const db = {
 
   submitVote: async (vote: Omit<Vote, 'id'>): Promise<Vote> => {
     const client = ensureClient();
-    // Check for existing vote to overwrite
+    // Try atomic upsert if unique constraint exists
+    const { data: upserted, error: upsertErr } = await client
+      .from('votes')
+      .upsert(vote, { onConflict: 'session_id,voter_name,match_id' })
+      .select()
+      .maybeSingle();
+
+    if (!upsertErr && upserted) {
+      return upserted;
+    }
+
+    // Fallback: Check for existing vote to overwrite
     const { data: existing, error: existErr } = await client
       .from('votes')
       .select('id')

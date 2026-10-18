@@ -49,7 +49,15 @@ export default function Settings({
     }
 
     // Save host passcode to localStorage
-    localStorage.setItem('WINE_TASTING_HOST_PASSCODE', hostPasscode.trim());
+    const oldPasscode = localStorage.getItem('WINE_TASTING_HOST_PASSCODE') || '';
+    const newPasscode = hostPasscode.trim();
+    localStorage.setItem('WINE_TASTING_HOST_PASSCODE', newPasscode);
+
+    if (oldPasscode !== newPasscode) {
+      setSavedMsg("Host passcode updated! Re-initializing connection...");
+      setTimeout(() => window.location.reload(), 1000);
+      return;
+    }
 
     setSavedMsg("Profile updated successfully!");
     setTimeout(() => setSavedMsg(''), 2000);
@@ -174,7 +182,7 @@ export default function Settings({
                 <Shield className="w-4 h-4 text-wine-400" /> Host Controls
               </label>
               <p className="text-xs text-slate-500">
-                Enables resolving bracket match winners, resetting sessions, and finalizing datasets.
+                Enables unbagging and mapping blind bottles to wines, resetting sessions, and finalizing datasets.
               </p>
             </div>
             <button

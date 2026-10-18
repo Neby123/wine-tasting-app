@@ -53,7 +53,7 @@ BEGIN
 EXCEPTION WHEN OTHERS THEN
   RETURN '';
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp;
 
 -- Votes table: tracks individual tastings of blind pairings
 CREATE TABLE votes (
@@ -70,7 +70,8 @@ CREATE TABLE votes (
     NULLIF(get_request_header('x-voter-token'), ''),
     gen_random_uuid()::text
   )::uuid,
-  created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now())
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()),
+  CONSTRAINT votes_session_voter_match_unique UNIQUE (session_id, voter_name, match_id)
 );
 
 -- History table: tracks completed tournament archives
@@ -107,9 +108,9 @@ ALTER TABLE votes ENABLE ROW LEVEL SECURITY;
 ALTER TABLE history ENABLE ROW LEVEL SECURITY;
 ALTER TABLE app_settings ENABLE ROW LEVEL SECURITY;
 
--- Revoke all direct permissions on app_settings from public
--- This makes it impossible for public roles (anon/authenticated) to read app_settings directly
-CREATE POLICY "Deny direct read on app_settings" ON app_settings FOR ALL USING (false);
+-- Revoke all direct permissions on app_settings from public/anon/authenticated
+-- This makes it impossible for public roles to read app_settings directly via REST API
+REVOKE ALL ON TABLE app_settings FROM PUBLIC, anon, authenticated;
 
 -- Security Definer function to check host passcode
 CREATE OR REPLACE FUNCTION check_is_host()
@@ -117,19 +118,18 @@ RETURNS BOOLEAN AS $$
 DECLARE
   passed_code TEXT;
   actual_code TEXT;
-END;
-$$;
-CREATE OR REPLACE FUNCTION check_is_host()
-RETURNS BOOLEAN AS $$
-DECLARE
-  passed_code TEXT;
-  actual_code TEXT;
 BEGIN
   passed_code := get_request_header('x-host-passcode');
+  IF passed_code IS NULL OR trim(passed_code) = '' THEN
+    RETURN false;
+  END IF;
   SELECT value INTO actual_code FROM app_settings WHERE key = 'host_passcode';
   RETURN passed_code = actual_code;
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp;
+
+GRANT EXECUTE ON FUNCTION get_request_header(TEXT) TO PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION check_is_host() TO PUBLIC, anon, authenticated;
 
 -- RLS Policies for sessions
 CREATE POLICY "Allow public read on sessions" ON sessions FOR SELECT USING (true);
@@ -137,11 +137,22 @@ CREATE POLICY "Allow host write on sessions" ON sessions FOR ALL USING (check_is
 
 -- RLS Policies for wines
 CREATE POLICY "Allow public read on wines" ON wines FOR SELECT USING (true);
+CREATE POLICY "Allow guest insert on wines during setup" ON wines FOR INSERT 
+WITH CHECK (
+  EXISTS (
+    SELECT 1 FROM sessions WHERE id = wines.session_id AND status = 'setup'
+  )
+  OR check_is_host()
+);
 CREATE POLICY "Allow host write on wines" ON wines FOR ALL USING (check_is_host());
 
 -- RLS Policies for votes
 CREATE POLICY "Allow public read on votes" ON votes FOR SELECT USING (true);
-CREATE POLICY "Allow public insert on votes" ON votes FOR INSERT WITH CHECK (true);
+CREATE POLICY "Allow authenticated voter insert on votes" ON votes FOR INSERT 
+WITH CHECK (
+  get_request_header('x-voter-token') <> '' 
+  AND voter_token = get_request_header('x-voter-token')::uuid
+);
 CREATE POLICY "Allow voter update on votes" ON votes FOR UPDATE 
 USING (
   voter_token::text = get_request_header('x-voter-token')
@@ -182,7 +193,11 @@ CREATE TABLE wishlist (
 ALTER TABLE wishlist ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY "Allow public read on wishlist"   ON wishlist FOR SELECT USING (true);
-CREATE POLICY "Allow public insert on wishlist" ON wishlist FOR INSERT WITH CHECK (true);
+CREATE POLICY "Allow owner insert on wishlist"  ON wishlist FOR INSERT 
+WITH CHECK (
+  get_request_header('x-voter-token') <> '' 
+  AND voter_token = get_request_header('x-voter-token')::uuid
+);
 CREATE POLICY "Allow owner update on wishlist"  ON wishlist FOR UPDATE
   USING (voter_token::text = get_request_header('x-voter-token'))
   WITH CHECK (voter_token::text = get_request_header('x-voter-token'));
@@ -207,3 +222,15 @@ END $$;
 ALTER TABLE sessions REPLICA IDENTITY FULL;
 ALTER TABLE wines REPLICA IDENTITY FULL;
 ALTER TABLE votes REPLICA IDENTITY FULL;
+
+-- Additional high-yield metrics on votes (Metrics 1-3)
+ALTER TABLE votes ADD COLUMN IF NOT EXISTS perceived_price_1 TEXT;
+ALTER TABLE votes ADD COLUMN IF NOT EXISTS perceived_price_2 TEXT;
+ALTER TABLE votes ADD COLUMN IF NOT EXISTS buy_again_1 TEXT;
+ALTER TABLE votes ADD COLUMN IF NOT EXISTS buy_again_2 TEXT;
+ALTER TABLE votes ADD COLUMN IF NOT EXISTS acidity_1 NUMERIC;
+ALTER TABLE votes ADD COLUMN IF NOT EXISTS acidity_2 NUMERIC;
+ALTER TABLE votes ADD COLUMN IF NOT EXISTS body_1 NUMERIC;
+ALTER TABLE votes ADD COLUMN IF NOT EXISTS body_2 NUMERIC;
+ALTER TABLE votes ADD COLUMN IF NOT EXISTS sweetness_1 NUMERIC;
+ALTER TABLE votes ADD COLUMN IF NOT EXISTS sweetness_2 NUMERIC;

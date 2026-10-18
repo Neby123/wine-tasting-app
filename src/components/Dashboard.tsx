@@ -24,20 +24,25 @@ export default function Dashboard({
   const [activeTab, setActiveTab] = useState<'status' | 'analysis'>('status');
   const [mapping, setMapping] = useState<Record<string, string>>({});
 
+  const bagLabels = wines.length > 0
+    ? wines.map((w, idx) => w.blind_label || String.fromCharCode(65 + idx))
+    : ['A', 'B', 'C', 'D', 'E', 'F'];
+
   useEffect(() => {
     if (wines.length > 0) {
-      const initialMapping: Record<string, string> = {};
-      wines.forEach((w, idx) => {
-        const label = w.blind_label || String.fromCharCode(65 + idx);
-        initialMapping[label] = mapping[label] || '';
+      setMapping(prev => {
+        const next: Record<string, string> = {};
+        bagLabels.forEach(label => {
+          next[label] = prev[label] || '';
+        });
+        return next;
       });
-      setMapping(initialMapping);
     }
-  }, [wines]);
+  }, [wines.length]);
 
   const selectedWineIds = Object.values(mapping).filter(Boolean);
   const hasDuplicates = selectedWineIds.length !== new Set(selectedWineIds).size;
-  const targetCount = wines.length > 0 ? wines.length : 6;
+  const targetCount = wines.length > 0 ? wines.length : bagLabels.length;
   const canSubmitReveal = selectedWineIds.length === targetCount && !hasDuplicates;
   const isRevealed = wines.some(w => w.revealed);
 
@@ -277,7 +282,7 @@ export default function Dashboard({
       {isRevealed && awards && awards.bestInShow && (
         <div className="glass-panel border-2 border-gold-500/50 bg-gradient-to-r from-amber-950/40 via-gold-950/30 to-wine-950/40 rounded-2xl p-6 text-center space-y-3 shadow-2xl shadow-gold-950/30 animate-scale-in">
           <div className="inline-flex items-center gap-2 bg-gold-500/20 border border-gold-400/40 px-3.5 py-1 rounded-full text-gold-300 text-xs font-extrabold uppercase tracking-widest">
-            <Trophy className="w-4 h-4 text-gold-400 animate-bounce" /> Brut Force Champion (Best in Show)
+            <Trophy className="w-4 h-4 text-gold-400 animate-bounce" /> {session.name} Champion (Best in Show)
           </div>
           <h3 className="text-3xl sm:text-4xl font-bold font-serif text-slate-100">
             {awards.bestInShow.name}
@@ -336,14 +341,14 @@ export default function Dashboard({
                         Unbag & Reveal Bottles
                       </h3>
                       <p className="text-xs text-slate-500 mt-1">
-                        When tasting is complete, unbag each physical bottle A-H and map its blind letter to its true wine identity below.
+                        When tasting is complete, unbag each physical bottle ({bagLabels[0]}-{bagLabels[bagLabels.length - 1]}) and map its blind letter to its true wine identity below.
                       </p>
                     </div>
                   </div>
 
                   <form onSubmit={handleConfirmReveal} className="space-y-6">
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                      {['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'].map((label) => (
+                      {bagLabels.map((label) => (
                         <div key={label} className="flex items-center gap-3 bg-slate-950/60 p-3 border border-slate-850 rounded-xl">
                           <span className="w-8 h-8 rounded-full bg-wine-800 text-white font-black font-serif flex items-center justify-center">
                             {label}
@@ -392,7 +397,7 @@ export default function Dashboard({
                   <div className="space-y-1">
                     <h3 className="text-2xl font-bold font-serif text-slate-200">Tasting In Progress!</h3>
                     <p className="text-sm text-slate-400 max-w-sm mx-auto">
-                      Fill in your preference sliders on the Bracket tab. When everyone finishes, the Host will unbag and reveal the wines!
+                      Fill in your preference sliders on the Tasting Sheet tab. When everyone finishes, the Host will unbag and reveal the wines!
                     </p>
                   </div>
                 </div>
@@ -469,7 +474,7 @@ export default function Dashboard({
                           </span>
                         ) : (
                           <span className="text-slate-500 bg-slate-900 px-2.5 py-0.5 rounded-full">
-                            Not Started (0/7)
+                            Not Started (0/{expectedVotes})
                           </span>
                         )}
                       </div>
@@ -485,7 +490,7 @@ export default function Dashboard({
 
       {/* ---------------------------------------------------- */}
       {/* VIEW 2: VALUE ANALYSIS & AWARDS */}
-      // ----------------------------------------------------
+      {/* ---------------------------------------------------- */}
       {activeTab === 'analysis' && isRevealed && awards && (
         <div className="space-y-8 animate-fade-in">
           
@@ -497,7 +502,7 @@ export default function Dashboard({
                 <div className="absolute top-0 right-0 w-16 h-16 bg-gold-400/5 rounded-bl-full blur-sm" />
                 <div className="space-y-2">
                   <Trophy className="w-8 h-8 text-gold-400 mx-auto" />
-                  <p className="text-[10px] text-gold-300 font-extrabold uppercase tracking-widest">Bracket Winner</p>
+                  <p className="text-[10px] text-gold-300 font-extrabold uppercase tracking-widest">Grand Champion (Best in Show)</p>
                   <h4 className="text-base font-bold text-slate-100 font-serif leading-tight line-clamp-2">{awards.bestInShow.name}</h4>
                 </div>
                 <div className="text-xs text-slate-400 mt-3 pt-2 border-t border-slate-850 flex justify-between items-center">

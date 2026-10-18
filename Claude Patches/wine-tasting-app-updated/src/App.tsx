@@ -2,20 +2,15 @@ import React, { useState, useEffect } from 'react';
 import { db, supabase } from './utils/supabase';
 import { WineSession, Wine, Vote, HistoricalTasting } from './utils/mockData';
 import IntakeForm from './components/IntakeForm';
-import Brackets from './components/Brackets';
-import VotingSlider from './components/VotingSlider';
+import TastingSheet from './components/TastingSheet';
 import Dashboard from './components/Dashboard';
 import History from './components/History';
 import Settings from './components/Settings';
 import TasterProfiles from './components/TasterProfiles';
 import Cellar from './components/Cellar';
-import { Wine as WineIcon, Trophy, Layers, ClipboardList, History as HistoryIcon, Settings as SettingsIcon, PlusCircle, AlertCircle, RefreshCw, Users, Star } from 'lucide-react';
+import { Wine as WineIcon, Trophy, ClipboardList, History as HistoryIcon, Settings as SettingsIcon, PlusCircle, AlertCircle, RefreshCw, Users, Star, FileText } from 'lucide-react';
 
-// The tab you're viewing is kept in the URL hash (e.g. #history) so a page
-// reload — which mobile browsers trigger on their own when they discard a
-// backgrounded tab — puts you back where you were instead of dumping you on the
-// start screen. It also makes each view deep-linkable and back-button friendly.
-const TAB_VALUES = ['dashboard', 'brackets', 'intake', 'history', 'settings', 'palate', 'cellar'] as const;
+const TAB_VALUES = ['dashboard', 'tasting', 'intake', 'history', 'settings', 'palate', 'cellar'] as const;
 type TabValue = typeof TAB_VALUES[number];
 
 const getTabFromHash = (): TabValue => {
@@ -37,16 +32,20 @@ export default function App() {
 
   // Navigation States
   const [currentTab, setCurrentTab] = useState<TabValue>(getTabFromHash);
-  const [currentMatch, setCurrentMatch] = useState<{ id: string; wine1: string; wine2: string } | null>(null);
   
   // New session input
-  const [newSessionName, setNewSessionName] = useState('Day de Rosé');
+  const [newSessionName, setNewSessionName] = useState('Fifty Shades of Grigio');
+  const [newSessionDate, setNewSessionDate] = useState('2026-11-14');
   const [creatingSession, setCreatingSession] = useState(false);
+
+  const loadSeqRef = React.useRef(0);
 
   // Load active session and data
   const loadData = async () => {
+    const seq = ++loadSeqRef.current;
     try {
       const session = await db.getActiveSession();
+      if (seq !== loadSeqRef.current) return;
       setActiveSession(session);
       
       if (session) {
@@ -54,13 +53,9 @@ export default function App() {
           db.getWines(session.id),
           db.getVotes(session.id)
         ]);
+        if (seq !== loadSeqRef.current) return;
         setWines(winesData);
         setVotes(votesData);
-
-        // Auto redirect tab if tasting starts and we are on intake
-        if (session.status === 'tasting' && currentTab === 'intake') {
-          setCurrentTab('brackets');
-        }
       } else {
         setWines([]);
         setVotes([]);
@@ -68,7 +63,9 @@ export default function App() {
     } catch (err) {
       console.error("Error loading database:", err);
     } finally {
-      setLoading(false);
+      if (seq === loadSeqRef.current) {
+        setLoading(false);
+      }
     }
   };
 
@@ -157,12 +154,22 @@ export default function App() {
         async (payload) => {
           console.log('Realtime session update payload:', payload);
           const newSession = payload.new as WineSession;
-          if (!newSession || newSession.status === 'completed') {
+          // Guard against DELETE events which return empty {} for payload.new
+          if (!newSession || !newSession.id) {
             setActiveSession(null);
             setWines([]);
             setVotes([]);
           } else {
             setActiveSession(newSession);
+            if (newSession.status === 'completed') {
+              const [w, v] = await Promise.all([
+                db.getWines(newSession.id),
+                db.getVotes(newSession.id)
+              ]);
+              setWines(w);
+              setVotes(v);
+              setCurrentTab('dashboard');
+            }
           }
         }
       )
@@ -218,8 +225,9 @@ export default function App() {
 
   // Profile Save Actions
   const handleUpdateVoterName = (name: string) => {
-    setVoterName(name);
-    localStorage.setItem('WINE_TASTING_VOTER_NAME', name);
+    const trimmed = (name || '').trim();
+    setVoterName(trimmed);
+    localStorage.setItem('WINE_TASTING_VOTER_NAME', trimmed);
   };
 
   const handleUpdateHostMode = (host: boolean) => {
@@ -234,13 +242,19 @@ export default function App() {
 
     setCreatingSession(true);
     try {
-      const session = await db.createSession(newSessionName.trim());
+      const session = await db.createSession(newSessionName.trim(), newSessionDate.trim());
       setActiveSession(session);
       setWines([]);
       setVotes([]);
       setCurrentTab('intake');
     } catch (err) {
-      console.error(err);
+      console.error("Failed to create session:", err);
+      const msg = (err as Error).message || String(err);
+      if (msg.includes("Failed to fetch")) {
+        alert("Connection Failed: Unable to reach your Supabase database. Please go to Settings -> Database Configuration and double check your Supabase URL and Anon Key.");
+      } else {
+        alert("Failed to initialize session: " + msg);
+      }
     } finally {
       setCreatingSession(false);
     }
@@ -248,16 +262,26 @@ export default function App() {
 
   const handleAddWine = async (wineData: Omit<Wine, 'id' | 'session_id' | 'revealed'>) => {
     if (!activeSession) return;
-    const newWine = await db.addWine({
-      ...wineData,
-      session_id: activeSession.id
-    });
-    setWines(prev => [...prev, newWine]);
+    try {
+      const newWine = await db.addWine({
+        ...wineData,
+        session_id: activeSession.id
+      });
+      setWines(prev => [...prev, newWine]);
+    } catch (err) {
+      console.error('Failed to add wine:', err);
+      alert('Failed to add wine. Please check your connection and try again.');
+    }
   };
 
   const handleDeleteWine = async (wineId: string) => {
-    await db.deleteWine(wineId);
-    setWines(prev => prev.filter(w => w.id !== wineId));
+    try {
+      await db.deleteWine(wineId);
+      setWines(prev => prev.filter(w => w.id !== wineId));
+    } catch (err) {
+      console.error('Failed to delete wine:', err);
+      alert('Failed to delete wine. Please check your connection and try again.');
+    }
   };
 
   const handleStartTasting = async () => {
@@ -265,32 +289,17 @@ export default function App() {
     
     setLoading(true);
     try {
-      // Shift status to tasting (labels A-H are physically on bags, no DB labels yet)
+      // Shift status to tasting (labels A-F are physically on bags, no DB labels yet)
       const updatedSession = await db.updateSessionStatus(activeSession.id, 'tasting');
       setActiveSession(updatedSession);
       await loadData();
-      setCurrentTab('brackets');
+      setCurrentTab('tasting');
     } catch (err) {
       console.error(err);
       alert("Failed to start tasting session: " + (err as Error).message);
     } finally {
       setLoading(false);
     }
-  };
-
-  const handleResolveMatch = async (matchId: string, winnerLabel: string) => {
-    if (!activeSession) return;
-    
-    // Update local state copy
-    const updatedWinners = {
-      ...(activeSession.match_winners || {}),
-      [matchId]: winnerLabel
-    };
-
-    // Update in Database
-    const updatedSession = await db.updateSessionMatchWinners(activeSession.id, updatedWinners);
-    setActiveSession(updatedSession);
-    await loadData();
   };
 
   const handleRevealWines = async (mapping: Record<string, string>) => {
@@ -303,13 +312,19 @@ export default function App() {
       // 2. Set session status to completed
       const updatedSession = await db.updateSessionStatus(activeSession.id, 'completed');
 
-      // 3. Compile history report
+      // 3. Compile history report based on 0-100 standalone appreciation scores
       const getWineAppreciationIndex = (label: string) => {
         const wineVotes = votes.filter(v => v.wine_1_label === label || v.wine_2_label === label);
         if (wineVotes.length === 0) return 50;
         let scoreSum = 0;
         wineVotes.forEach(v => {
-          scoreSum += (v.wine_1_label === label) ? (100 - v.slider_value) : v.slider_value;
+          if (v.match_id?.startsWith('STANDALONE_') || v.wine_1_label === v.wine_2_label) {
+            scoreSum += v.slider_value;
+          } else if (v.wine_1_label === label) {
+            scoreSum += (100 - v.slider_value);
+          } else {
+            scoreSum += v.slider_value;
+          }
         });
         return Math.round(scoreSum / wineVotes.length);
       };
@@ -317,65 +332,38 @@ export default function App() {
       const wineStats = updatedWines.map(w => {
         const label = w.blind_label || '';
         const score = getWineAppreciationIndex(label);
-        let wins = 0;
-        Object.values(updatedSession?.match_winners || {}).forEach(winner => {
-          if (winner === label) wins++;
-        });
         return {
           ...w,
           score,
-          wins,
-          valueRatio: score / Math.max(1, w.price)
+          wins: 0,
+          valueRatio: score / Math.max(1, w.price || 1)
         };
       });
 
-      const sorted = [...wineStats].sort((a, b) => {
-        if (b.wins !== a.wins) return b.wins - a.wins;
-        return b.score - a.score;
-      });
-
+      const sorted = [...wineStats].sort((a, b) => b.score - a.score);
+      const bisWine = sorted[0];
       const bestValue = [...wineStats].sort((a, b) => b.valueRatio - a.valueRatio)[0];
-      const bisLabel = updatedSession?.match_winners?.['F'];
-      const bisWine = wineStats.find(w => w.blind_label === bisLabel);
 
-      // Find giant killer match
+      // Dynamic Giant Killer calculation: cheapest wine that scored higher than a more expensive wine
       let giantKillerMatch: string | undefined = undefined;
-      let maxMargin = 0;
-      const matchesList = [
-        { id: 'Q1', w1: 'A', w2: 'B' },
-        { id: 'Q2', w1: 'C', w2: 'D' },
-        { id: 'Q3', w1: 'E', w2: 'F' },
-        { id: 'Q4', w1: 'G', w2: 'H' },
-        { id: 'S1', w1: updatedSession?.match_winners?.['Q1'], w2: updatedSession?.match_winners?.['Q2'] },
-        { id: 'S2', w1: updatedSession?.match_winners?.['Q3'], w2: updatedSession?.match_winners?.['Q4'] },
-        { id: 'F', w1: updatedSession?.match_winners?.['S1'], w2: updatedSession?.match_winners?.['S2'] }
-      ];
-
-      matchesList.forEach(m => {
-        const winnerLabel = updatedSession?.match_winners?.[m.id];
-        if (!winnerLabel || !m.w1 || !m.w2) return;
-        const loserLabel = winnerLabel === m.w1 ? m.w2 : m.w1;
-        const winner = wineStats.find(w => w.blind_label === winnerLabel);
-        const loser = wineStats.find(w => w.blind_label === loserLabel);
-
-        if (winner && loser && winner.price < loser.price) {
-          const margin = loser.price - winner.price;
-          if (margin > maxMargin) {
-            maxMargin = margin;
-            giantKillerMatch = `${winner.name} ($${winner.price.toFixed(2)}) beat ${loser.name} ($${loser.price.toFixed(2)})`;
-          }
+      const sortedByPrice = [...wineStats].filter(w => typeof w.price === 'number' && w.price > 0).sort((a, b) => a.price - b.price);
+      if (sortedByPrice.length >= 2) {
+        const cheapest = sortedByPrice[0];
+        const pricierOutperformed = sortedByPrice.slice(1).find(w => w.price > cheapest.price && cheapest.score > w.score);
+        if (pricierOutperformed) {
+          giantKillerMatch = `${cheapest.name} ($${cheapest.price.toFixed(2)}) beat ${pricierOutperformed.name} ($${pricierOutperformed.price.toFixed(2)})`;
         }
-      });
+      }
 
       const report = {
         id: activeSession.id,
         name: activeSession.name,
         date: activeSession.date,
-        winnerName: bisWine?.name || "Unknown",
-        winnerPrice: bisWine?.price || 0,
-        winnerBroughtBy: bisWine?.submitted_by || "Unknown",
+        winnerName: bisWine?.name || (sorted[0] ? sorted[0].name : "Unknown"),
+        winnerPrice: bisWine?.price || (sorted[0] ? sorted[0].price : 0),
+        winnerBroughtBy: bisWine?.submitted_by || (sorted[0] ? sorted[0].submitted_by : "Unknown"),
         winesCount: updatedWines.length,
-        groupWinner: bisWine ? `${bisWine.name} ($${bisWine.price.toFixed(2)})` : "N/A",
+        groupWinner: bisWine ? `${bisWine.name} ($${bisWine.price.toFixed(2)})` : (sorted[0] ? `${sorted[0].name} ($${sorted[0].price.toFixed(2)})` : "N/A"),
         secondPlace: sorted[1] ? `${sorted[1].name} ($${sorted[1].price.toFixed(2)})` : "N/A",
         bestValue: bestValue ? `${bestValue.name} ($${bestValue.price.toFixed(2)})` : "N/A",
         giantKiller: giantKillerMatch,
@@ -405,8 +393,8 @@ export default function App() {
       // Add to archive
       await db.addHistorySession(report);
 
+      setWines(updatedWines);
       setActiveSession(updatedSession);
-      await loadData();
       setCurrentTab('dashboard');
     } catch (err) {
       console.error(err);
@@ -417,7 +405,7 @@ export default function App() {
   };
 
   const handleResetSession = async () => {
-    if (!window.confirm("Are you sure you want to delete this session and restart? All current entries and votes will be lost.")) return;
+    if (!window.confirm("Are you sure you want to end this tasting session and start fresh?")) return;
     if (!activeSession) return;
     
     setLoading(true);
@@ -426,7 +414,7 @@ export default function App() {
       setActiveSession(null);
       setWines([]);
       setVotes([]);
-      setCurrentTab('settings');
+      setCurrentTab('intake');
     } catch (err) {
       console.error(err);
     } finally {
@@ -435,68 +423,92 @@ export default function App() {
   };
 
   // Vote Actions
-  const handleSelectMatch = (matchId: string, wine1: string, wine2: string) => {
-    if (!voterName) {
-      alert("Please set your Name/Participant name in settings before tasting!");
-      setCurrentTab('settings');
-      return;
+  const handleSubmitStandaloneRating = async (
+    wineLabel: string,
+    score: number,
+    notes?: string,
+    extraMetrics?: {
+      perceivedPrice?: 'cheap' | 'mid' | 'expensive';
+      buyAgain?: 'yes' | 'maybe' | 'no';
+      acidity?: number;
+      body?: number;
+      sweetness?: number;
     }
-    setCurrentMatch({ id: matchId, wine1, wine2 });
-  };
+  ) => {
+    if (!activeSession) return;
 
-  const handleSubmitVote = async (sliderValue: number, notes1: string, notes2: string) => {
-    if (!activeSession || !currentMatch) return;
+    try {
+      await db.submitVote({
+        session_id: activeSession.id,
+        voter_name: voterName,
+        match_id: `STANDALONE_${wineLabel}`,
+        wine_1_label: wineLabel,
+        wine_2_label: wineLabel,
+        slider_value: score,
+        notes_wine_1: notes || undefined,
+        perceived_price_1: extraMetrics?.perceivedPrice,
+        buy_again_1: extraMetrics?.buyAgain,
+        acidity_1: extraMetrics?.acidity,
+        body_1: extraMetrics?.body,
+        sweetness_1: extraMetrics?.sweetness
+      });
 
-    await db.submitVote({
-      session_id: activeSession.id,
-      voter_name: voterName,
-      match_id: currentMatch.id,
-      wine_1_label: currentMatch.wine1,
-      wine_2_label: currentMatch.wine2,
-      slider_value: sliderValue,
-      notes_wine_1: notes1 || undefined,
-      notes_wine_2: notes2 || undefined
-    });
-
-    await loadData();
-  };
-
-  // Check existing vote
-  const getExistingVote = () => {
-    if (!currentMatch) return undefined;
-    return votes.find(v => 
-      v.match_id === currentMatch.id && 
-      v.voter_name.toLowerCase() === voterName.toLowerCase()
-    );
+      await loadData();
+    } catch (err) {
+      console.error('Failed to submit standalone rating:', err);
+      throw err;
+    }
   };
 
   return (
     <div className="flex-1 flex flex-col min-h-screen pb-12">
       {/* Top Banner Navigation */}
       <header className="glass-panel sticky top-0 z-50 border-b border-slate-800/80 px-6 py-4 flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-wine-800 to-wine-600 flex items-center justify-center shadow-lg shadow-wine-950/40">
+        <button
+          onClick={() => setCurrentTab('intake')}
+          className="flex items-center gap-3 text-left focus:outline-none group cursor-pointer"
+          title="Return to Home / Active Session"
+        >
+          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-wine-800 to-wine-600 flex items-center justify-center shadow-lg shadow-wine-950/40 group-hover:scale-105 transition-transform">
             <WineIcon className="w-5.5 h-5.5 text-white" />
           </div>
           <div>
-            <h1 className="text-lg font-extrabold font-serif tracking-tight text-wine-100 flex items-center gap-1.5">
+            <h1 className="text-lg font-extrabold font-serif tracking-tight text-wine-100 flex items-center gap-1.5 group-hover:text-wine-200 transition-colors">
               Grand Taste Tourney
             </h1>
             <p className="text-[10px] text-slate-500 uppercase tracking-widest font-mono font-bold">
               {supabase ? "Multiplayer Connected" : "Connection Pending (Check Settings)"}
             </p>
           </div>
-        </div>
+        </button>
 
         {/* Global User status info */}
         <nav className="flex flex-wrap items-center bg-slate-950/60 p-1 border border-slate-850 rounded-xl text-xs font-semibold gap-1">
+          {(!activeSession || activeSession.status === 'completed') && (
+            <button
+              onClick={() => {
+                setActiveSession(null);
+                setWines([]);
+                setVotes([]);
+                setCurrentTab('intake');
+              }}
+              className={`px-4 py-2 rounded-lg transition-colors flex items-center gap-1.5 ${
+                !activeSession && currentTab === 'intake'
+                  ? 'bg-wine-850 text-wine-200' 
+                  : 'text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              <PlusCircle className="w-4 h-4 text-wine-400" /> New Session
+            </button>
+          )}
+
           {activeSession && (
             <>
               <button
-                onClick={() => { setCurrentMatch(null); setCurrentTab('intake'); }}
+                onClick={() => setCurrentTab('intake')}
                 disabled={activeSession.status !== 'setup'}
                 className={`px-4 py-2 rounded-lg transition-colors flex items-center gap-1.5 ${
-                  currentTab === 'intake' && !currentMatch
+                  currentTab === 'intake'
                     ? 'bg-wine-850 text-wine-200' 
                     : 'text-slate-400 hover:text-slate-200 disabled:opacity-30 disabled:pointer-events-none'
                 }`}
@@ -505,35 +517,35 @@ export default function App() {
               </button>
 
               <button
-                onClick={() => { setCurrentMatch(null); setCurrentTab('brackets'); }}
+                onClick={() => setCurrentTab('tasting')}
                 disabled={activeSession.status === 'setup'}
                 className={`px-4 py-2 rounded-lg transition-colors flex items-center gap-1.5 ${
-                  currentTab === 'brackets' || currentMatch
-                    ? 'bg-wine-850 text-wine-200' 
+                  currentTab === 'tasting'
+                    ? 'bg-wine-850 text-wine-200 font-bold shadow-md shadow-wine-950/20' 
                     : 'text-slate-400 hover:text-slate-200 disabled:opacity-30 disabled:pointer-events-none'
                 }`}
               >
-                <Layers className="w-4 h-4" /> Bracket
+                <FileText className="w-4 h-4 text-wine-400" /> Tasting Sheet
               </button>
 
               <button
-                onClick={() => { setCurrentMatch(null); setCurrentTab('dashboard'); }}
+                onClick={() => setCurrentTab('dashboard')}
                 disabled={activeSession.status === 'setup'}
                 className={`px-4 py-2 rounded-lg transition-colors flex items-center gap-1.5 ${
-                  currentTab === 'dashboard' && !currentMatch
-                    ? 'bg-wine-850 text-wine-200' 
+                  currentTab === 'dashboard'
+                    ? 'bg-wine-850 text-wine-200 font-bold shadow-md shadow-wine-950/20' 
                     : 'text-slate-400 hover:text-slate-200 disabled:opacity-30 disabled:pointer-events-none'
                 }`}
               >
-                <Trophy className="w-4 h-4" /> Standings & Stats
+                <Trophy className="w-4 h-4 text-gold-400" /> Standings & Stats
               </button>
             </>
           )}
 
           <button
-            onClick={() => { setCurrentMatch(null); setCurrentTab('history'); }}
+            onClick={() => setCurrentTab('history')}
             className={`px-4 py-2 rounded-lg transition-colors flex items-center gap-1.5 ${
-              currentTab === 'history' && !currentMatch
+              currentTab === 'history'
                 ? 'bg-wine-850 text-wine-200' 
                 : 'text-slate-400 hover:text-slate-200'
             }`}
@@ -542,9 +554,9 @@ export default function App() {
           </button>
 
           <button
-            onClick={() => { setCurrentMatch(null); setCurrentTab('palate'); }}
+            onClick={() => setCurrentTab('palate')}
             className={`px-4 py-2 rounded-lg transition-colors flex items-center gap-1.5 ${
-              currentTab === 'palate' && !currentMatch
+              currentTab === 'palate'
                 ? 'bg-wine-850 text-wine-200'
                 : 'text-slate-400 hover:text-slate-200'
             }`}
@@ -553,9 +565,9 @@ export default function App() {
           </button>
 
           <button
-            onClick={() => { setCurrentMatch(null); setCurrentTab('cellar'); }}
+            onClick={() => setCurrentTab('cellar')}
             className={`px-4 py-2 rounded-lg transition-colors flex items-center gap-1.5 ${
-              currentTab === 'cellar' && !currentMatch
+              currentTab === 'cellar'
                 ? 'bg-wine-850 text-wine-200'
                 : 'text-slate-400 hover:text-slate-200'
             }`}
@@ -564,9 +576,9 @@ export default function App() {
           </button>
 
           <button
-            onClick={() => { setCurrentMatch(null); setCurrentTab('settings'); }}
+            onClick={() => setCurrentTab('settings')}
             className={`px-4 py-2 rounded-lg transition-colors flex items-center gap-1.5 ${
-              currentTab === 'settings' && !currentMatch
+              currentTab === 'settings'
                 ? 'bg-wine-850 text-wine-200' 
                 : 'text-slate-400 hover:text-slate-200'
             }`}
@@ -619,10 +631,23 @@ export default function App() {
                   <input
                     type="text"
                     required
-                    placeholder="e.g. Day de Rosé"
+                    placeholder="e.g. Fifty Shades of Grigio"
                     value={newSessionName}
                     onChange={(e) => setNewSessionName(e.target.value)}
                     className="w-full px-3 py-2 bg-slate-950 border border-slate-800 focus:border-wine-500 rounded-lg text-slate-200 text-sm focus:outline-none focus:ring-1 focus:ring-wine-500 font-semibold"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1">
+                    Event Date
+                  </label>
+                  <input
+                    type="date"
+                    required
+                    value={newSessionDate}
+                    onChange={(e) => setNewSessionDate(e.target.value)}
+                    className="w-full px-3 py-2 bg-slate-950 border border-slate-800 focus:border-wine-500 rounded-lg text-slate-200 text-sm focus:outline-none focus:ring-1 focus:ring-wine-500 font-semibold font-mono"
                   />
                 </div>
 
@@ -663,17 +688,6 @@ export default function App() {
               </button>
             </div>
           </div>
-        ) : currentMatch ? (
-          /* Active Slider Evaluator view */
-          <VotingSlider
-            matchId={currentMatch.id}
-            wine1Label={currentMatch.wine1}
-            wine2Label={currentMatch.wine2}
-            voterName={voterName}
-            existingVote={getExistingVote()}
-            onSubmitVote={handleSubmitVote}
-            onBackToBracket={() => setCurrentMatch(null)}
-          />
         ) : (
           /* Main Views Router */
           <div>
@@ -688,14 +702,12 @@ export default function App() {
               />
             )}
 
-            {currentTab === 'brackets' && (
-              <Brackets
+            {currentTab === 'tasting' && (
+              <TastingSheet
                 wines={wines}
-                votes={votes}
                 voterName={voterName}
-                revealed={wines.some(w => w.revealed)}
-                matchWinners={activeSession.match_winners || {}}
-                onSelectMatch={handleSelectMatch}
+                votes={votes}
+                onSubmitStandaloneRating={handleSubmitStandaloneRating}
               />
             )}
 
@@ -706,7 +718,6 @@ export default function App() {
                 votes={votes}
                 isHost={isHost}
                 matchWinners={activeSession.match_winners || {}}
-                onResolveMatch={handleResolveMatch}
                 onRevealWines={handleRevealWines}
                 onResetSession={handleResetSession}
               />
