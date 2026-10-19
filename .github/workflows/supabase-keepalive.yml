@@ -41,20 +41,19 @@ jobs:
             echo "Publishable key format detected."
           else
             # Decode JWT payload and inspect top-level role claim using python3 via os.environ (no argv exposure)
-            ROLE=$(python3 -c "
-import os, sys, json, base64
-token = os.environ.get('ANON_KEY', '')
-parts = token.split('.')
-if len(parts) < 2:
-    sys.exit(2)
-b64 = parts[1].replace('-', '+').replace('_', '/')
-b64 += '=' * ((4 - len(b64) % 4) % 4)
-try:
-    payload = json.loads(base64.b64decode(b64).decode('utf-8'))
-    print(payload.get('role', ''))
-except Exception:
-    sys.exit(3)
-")
+            ROLE=$(python3 -c "import os, sys, json, base64, textwrap; exec(textwrap.dedent('''
+              token = os.environ.get('ANON_KEY', '')
+              parts = token.split('.')
+              if len(parts) < 2:
+                  sys.exit(2)
+              b64 = parts[1].replace('-', '+').replace('_', '/')
+              b64 += '=' * ((4 - len(b64) % 4) % 4)
+              try:
+                  payload = json.loads(base64.b64decode(b64).decode('utf-8'))
+                  print(payload.get('role', ''))
+              except Exception:
+                  sys.exit(3)
+            '''))")
             STATUS_PY=$?
             if [ $STATUS_PY -ne 0 ]; then
               echo "SECURITY ERROR: Failed to decode JWT payload in SUPABASE_ANON_KEY. Failing closed."
