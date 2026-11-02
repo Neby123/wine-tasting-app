@@ -2,8 +2,8 @@ name: Supabase Keepalive Ping
 
 on:
   schedule:
-    # Runs twice weekly (every Monday & Thursday at 12:00 UTC) to prevent 7-day inactivity pause
-    - cron: '0 12 * * 1,4'
+    # Runs twice daily (at 05:15 and 17:15 UTC, off-peak) to prevent Supabase free-tier inactivity pause
+    - cron: '15 5,17 * * *'
   workflow_dispatch:
 
 permissions:
@@ -66,29 +66,50 @@ jobs:
             fi
           fi
 
-          echo "Authenticated mode: Querying sessions table with repository secret..."
+          echo "Authenticated mode: Preparing curl configuration for keepalive burst..."
           CURL_CFG="header = \"apikey: $ANON_KEY\""
           if [[ "$ANON_KEY" != sb_publishable_* ]]; then
             CURL_CFG="${CURL_CFG}"$'\n'"header = \"Authorization: Bearer $ANON_KEY\""
           fi
 
-          RAW_STATUS=$(printf '%s\n' "$CURL_CFG" | curl -s -o /dev/null -w "%{http_code}" \
-            --retry 3 --retry-delay 5 --max-time 15 \
-            -K - \
-            "https://rprjfaxsmwdzqwzycujh.supabase.co/rest/v1/sessions?select=id&limit=1" || true)
+          ping_endpoint() {
+            local label="$1"
+            local method="$2"
+            local endpoint="$3"
+            shift 3
+            local extra_args=("$@")
 
-          STATUS="${RAW_STATUS:-000}"
-          echo "HTTP Response Status Code: $STATUS"
+            echo "Executing keepalive request: $label ($method $endpoint)..."
+            local raw_status
+            raw_status=$(printf '%s\n' "$CURL_CFG" | curl -s -o /dev/null -w "%{http_code}" \
+              --retry 3 --retry-delay 5 --max-time 15 \
+              -X "$method" \
+              -H "Cache-Control: no-cache" \
+              "${extra_args[@]}" \
+              -K - \
+              "https://rprjfaxsmwdzqwzycujh.supabase.co${endpoint}" || true)
 
-          if [ "$STATUS" = "200" ] || [ "$STATUS" = "206" ]; then
-            echo "SUCCESS: Authenticated database query completed! Activity timer reset."
-          elif [ "$STATUS" = "401" ]; then
-            echo "ERROR: SUPABASE_ANON_KEY secret was rejected by Supabase (HTTP 401 Unauthorized). Verify repository secret."
-            exit 1
-          elif [ "$STATUS" = "000" ]; then
-            echo "ERROR: Failed to establish network connection or resolve host (Supabase project may be paused in dashboard)."
-            exit 1
-          else
-            echo "ERROR: Unexpected HTTP status code $STATUS received from Supabase."
-            exit 1
-          fi
+            local status="${raw_status:-000}"
+            echo "[$label] HTTP Response Status Code: $status"
+
+            if [ "$status" = "200" ] || [ "$status" = "204" ] || [ "$status" = "206" ]; then
+              echo "[$label] SUCCESS: Endpoint responded with HTTP $status."
+            elif [ "$status" = "401" ]; then
+              echo "ERROR: SUPABASE_ANON_KEY secret was rejected by Supabase (HTTP 401 Unauthorized) on $label. Verify repository secret."
+              exit 1
+            elif [ "$status" = "000" ]; then
+              echo "ERROR: Failed to establish network connection or resolve host on $label (Supabase project may be paused in dashboard)."
+              exit 1
+            else
+              echo "ERROR: Unexpected HTTP status code $status received from Supabase on $label."
+              exit 1
+            fi
+          }
+
+          echo "Authenticated mode: Executing comprehensive database activity burst..."
+          ping_endpoint "sessions" "GET" "/rest/v1/sessions?select=id&limit=1" -H "Prefer: count=exact"
+          ping_endpoint "wines" "GET" "/rest/v1/wines?select=id&limit=1" -H "Prefer: count=exact"
+          ping_endpoint "history" "GET" "/rest/v1/history?select=id&limit=1" -H "Prefer: count=exact"
+          ping_endpoint "rpc-check_is_host" "POST" "/rest/v1/rpc/check_is_host" -H "Content-Type: application/json" -d "{}"
+
+          echo "SUCCESS: All database activity keepalive queries completed successfully! Activity timer reset."

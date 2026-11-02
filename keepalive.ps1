@@ -72,111 +72,188 @@ if ($ApiKey) {
             exit 1
         }
     }
+}
 
-    Write-Host "Pinging Supabase database with authentication ($ProjectRef)..." -ForegroundColor Cyan
-    $Url = "https://$ProjectRef.supabase.co/rest/v1/sessions?select=id&limit=1"
+# Helper function to invoke curl with streamed configuration over anonymous in-memory pipe (-K -)
+# The secret is never written to disk or exposed in command-line arguments.
+function Invoke-CurlPing {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Url,
+        [string]$Method = "GET",
+        [string]$Body = $null,
+        [hashtable]$Headers = @{},
+        [string]$Key = $null
+    )
+
+    $psi = New-Object System.Diagnostics.ProcessStartInfo
+    $psi.FileName = $curlExe.Source
+    $argsList = "-s -o NUL -w `"%{http_code}`" --retry 2 --max-time 15"
+    if ($Method -ne "GET") {
+        $argsList += " -X $Method"
+    }
+    if ($Body) {
+        $argsList += " -d `"$Body`""
+    }
+    $argsList += " -K - `"$Url`""
+    $psi.Arguments = $argsList
+    $psi.UseShellExecute = $false
+    $psi.RedirectStandardInput = $true
+    $psi.RedirectStandardOutput = $true
+    $psi.RedirectStandardError = $true
+    $psi.CreateNoWindow = $true
+
+    # Prefer native ProcessStartInfo.StandardInputEncoding when supported (.NET Core / PowerShell 7+).
+    # On Windows PowerShell 5.1 (.NET Framework), attempt scoped [Console]::InputEncoding adjustment if a console handle exists.
+    $hasInputEncodingProp = [bool]($psi.PSObject.Properties['StandardInputEncoding'])
+    $proc = $null
+    if ($hasInputEncodingProp) {
+        $psi.StandardInputEncoding = [System.Text.Encoding]::ASCII
+        $proc = [System.Diagnostics.Process]::Start($psi)
+    } else {
+        $prevEncoding = $null
+        try {
+            $prevEncoding = [Console]::InputEncoding
+            [Console]::InputEncoding = [System.Text.Encoding]::ASCII
+        } catch { }
+
+        try {
+            $proc = [System.Diagnostics.Process]::Start($psi)
+        } finally {
+            if ($prevEncoding) {
+                try { [Console]::InputEncoding = $prevEncoding } catch { }
+            }
+        }
+    }
+
+    try {
+        if ($Key) {
+            $proc.StandardInput.Write("header = `"apikey: $Key`"`n")
+            # Publishable keys ('sb_publishable_') use apikey header only; legacy anon JWT tokens require Bearer authorization header
+            if (-not $Key.StartsWith("sb_publishable_")) {
+                $proc.StandardInput.Write("header = `"Authorization: Bearer $Key`"`n")
+            }
+        }
+        foreach ($hName in $Headers.Keys) {
+            $hVal = $Headers[$hName]
+            $proc.StandardInput.Write("header = `"$($hName): $hVal`"`n")
+        }
+        $proc.StandardInput.Close()
+
+        # Drain stdout and stderr asynchronously in parallel to prevent pipe buffer deadlocks
+        $stdoutTask = $proc.StandardOutput.ReadToEndAsync()
+        $stderrTask = $proc.StandardError.ReadToEndAsync()
+        [System.Threading.Tasks.Task]::WaitAll($stdoutTask, $stderrTask)
+        $proc.WaitForExit()
+
+        return [PSCustomObject]@{
+            ExitCode = $proc.ExitCode
+            HttpCode = $stdoutTask.Result.Trim()
+            Error    = $stderrTask.Result.Trim()
+        }
+    } finally {
+        if ($proc) {
+            $proc.Dispose()
+        }
+    }
+}
+
+if ($ApiKey) {
+    Write-Host "Authenticated mode: Executing comprehensive database activity burst ($ProjectRef)..." -ForegroundColor Cyan
+    $targets = @(
+        @{
+            Label   = "sessions table"
+            Url     = "https://$ProjectRef.supabase.co/rest/v1/sessions?select=id&limit=1"
+            Method  = "GET"
+            Body    = $null
+            Headers = @{ 'Prefer' = 'count=exact'; 'Cache-Control' = 'no-cache' }
+        },
+        @{
+            Label   = "wines table"
+            Url     = "https://$ProjectRef.supabase.co/rest/v1/wines?select=id&limit=1"
+            Method  = "GET"
+            Body    = $null
+            Headers = @{ 'Prefer' = 'count=exact'; 'Cache-Control' = 'no-cache' }
+        },
+        @{
+            Label   = "history table"
+            Url     = "https://$ProjectRef.supabase.co/rest/v1/history?select=id&limit=1"
+            Method  = "GET"
+            Body    = $null
+            Headers = @{ 'Prefer' = 'count=exact'; 'Cache-Control' = 'no-cache' }
+        },
+        @{
+            Label   = "rpc/check_is_host"
+            Url     = "https://$ProjectRef.supabase.co/rest/v1/rpc/check_is_host"
+            Method  = "POST"
+            Body    = "{}"
+            Headers = @{ 'Content-Type' = 'application/json'; 'Cache-Control' = 'no-cache' }
+        }
+    )
+
+    foreach ($target in $targets) {
+        Write-Host "Executing keepalive request: $($target.Label) ($($target.Method))..." -ForegroundColor Cyan
+        $res = Invoke-CurlPing -Url $target.Url -Method $target.Method -Body $target.Body -Headers $target.Headers -Key $ApiKey
+
+        if ($res.ExitCode -ne 0) {
+            if ($res.ExitCode -eq 6) {
+                Write-Host "Network Error: Could not resolve host ($ProjectRef.supabase.co). The Supabase project is likely paused in the dashboard." -ForegroundColor Red
+            } else {
+                Write-Host "Network Error: curl exited with code $($res.ExitCode). Host could not be reached. Error: $($res.Error)" -ForegroundColor Red
+            }
+            exit $res.ExitCode
+        }
+
+        Write-Host "Supabase API Response Status Code: $($res.HttpCode)" -ForegroundColor Yellow
+        $statusCode = 0
+        if (-not [int]::TryParse($res.HttpCode, [ref]$statusCode)) {
+            Write-Host "ERROR: Non-numeric HTTP response received: $($res.HttpCode)" -ForegroundColor Red
+            exit 1
+        }
+
+        if ($statusCode -ge 200 -and $statusCode -lt 300) {
+            Write-Host "SUCCESS: $($target.Label) confirmed (HTTP $statusCode)." -ForegroundColor Green
+        } elseif ($statusCode -eq 401) {
+            Write-Host "ERROR: API key was provided but rejected by gateway (HTTP 401 Unauthorized) on $($target.Label). Verify key permissions." -ForegroundColor Red
+            exit 1
+        } else {
+            Write-Host "ERROR: Received unexpected HTTP status code $statusCode on $($target.Label)" -ForegroundColor Red
+            exit 1
+        }
+    }
+
+    Write-Host "SUCCESS: All authenticated database queries and RPC calls confirmed! Project activity timer reset." -ForegroundColor Green
+    exit 0
 } else {
     Write-Host "Pinging Supabase REST gateway ($ProjectRef)..." -ForegroundColor Cyan
     $Url = "https://$ProjectRef.supabase.co/rest/v1/"
-}
+    $res = Invoke-CurlPing -Url $Url -Method "GET" -Headers @{ 'Cache-Control' = 'no-cache' } -Key $null
 
-# Stream curl configuration strictly over an anonymous in-memory pipe (stdin).
-# The secret is never written to disk or temporary files, mitigating NTFS journals, SSD wear leveling, and AV scans.
-$httpCode = ""
-$curlError = ""
-$curlExitCode = 1
-
-$psi = New-Object System.Diagnostics.ProcessStartInfo
-$psi.FileName = $curlExe.Source
-$psi.Arguments = "-s -o NUL -w `"%{http_code}`" --retry 2 --max-time 15 -K - `"$Url`""
-$psi.UseShellExecute = $false
-$psi.RedirectStandardInput = $true
-$psi.RedirectStandardOutput = $true
-$psi.RedirectStandardError = $true
-$psi.CreateNoWindow = $true
-
-# Prefer native ProcessStartInfo.StandardInputEncoding when supported (.NET Core / PowerShell 7+).
-# On Windows PowerShell 5.1 (.NET Framework), attempt scoped [Console]::InputEncoding adjustment if a console handle exists.
-$hasInputEncodingProp = [bool]($psi.PSObject.Properties['StandardInputEncoding'])
-$proc = $null
-if ($hasInputEncodingProp) {
-    $psi.StandardInputEncoding = [System.Text.Encoding]::ASCII
-    $proc = [System.Diagnostics.Process]::Start($psi)
-} else {
-    $prevEncoding = $null
-    try {
-        $prevEncoding = [Console]::InputEncoding
-        [Console]::InputEncoding = [System.Text.Encoding]::ASCII
-    } catch { }
-
-    try {
-        $proc = [System.Diagnostics.Process]::Start($psi)
-    } finally {
-        if ($prevEncoding) {
-            try { [Console]::InputEncoding = $prevEncoding } catch { }
+    if ($res.ExitCode -ne 0) {
+        if ($res.ExitCode -eq 6) {
+            Write-Host "Network Error: Could not resolve host ($ProjectRef.supabase.co). The Supabase project is likely paused in the dashboard." -ForegroundColor Red
+        } else {
+            Write-Host "Network Error: curl exited with code $($res.ExitCode). Host could not be reached. Error: $($res.Error)" -ForegroundColor Red
         }
+        exit $res.ExitCode
     }
-}
 
-try {
-    if ($ApiKey) {
-        $proc.StandardInput.Write("header = `"apikey: $ApiKey`"`n")
-        # Publishable keys ('sb_publishable_') use apikey header only; legacy anon JWT tokens require Bearer authorization header
-        if (-not $ApiKey.StartsWith("sb_publishable_")) {
-            $proc.StandardInput.Write("header = `"Authorization: Bearer $ApiKey`"`n")
-        }
-    }
-    $proc.StandardInput.Close()
-
-    # Drain stdout and stderr asynchronously in parallel to prevent pipe buffer deadlocks
-    $stdoutTask = $proc.StandardOutput.ReadToEndAsync()
-    $stderrTask = $proc.StandardError.ReadToEndAsync()
-    [System.Threading.Tasks.Task]::WaitAll($stdoutTask, $stderrTask)
-    $proc.WaitForExit()
-
-    $httpCode = $stdoutTask.Result.Trim()
-    $curlError = $stderrTask.Result.Trim()
-    $curlExitCode = $proc.ExitCode
-} finally {
-    if ($proc) {
-        $proc.Dispose()
-    }
-}
-
-if ($curlExitCode -ne 0) {
-    if ($curlExitCode -eq 6) {
-        Write-Host "Network Error: Could not resolve host ($ProjectRef.supabase.co). The Supabase project is likely paused in the dashboard." -ForegroundColor Red
-    } else {
-        Write-Host "Network Error: curl exited with code $curlExitCode. Host could not be reached. Error: $curlError" -ForegroundColor Red
-    }
-    exit $curlExitCode
-}
-
-Write-Host "Supabase API Response Status Code: $httpCode" -ForegroundColor Yellow
-
-$statusCode = 0
-if (-not [int]::TryParse($httpCode, [ref]$statusCode)) {
-    Write-Host "ERROR: Non-numeric HTTP response received: $httpCode" -ForegroundColor Red
-    exit 1
-}
-
-if ($statusCode -ge 200 -and $statusCode -lt 300) {
-    if ($ApiKey) {
-        Write-Host "SUCCESS: Authenticated database query confirmed (HTTP $statusCode). Project activity timer reset." -ForegroundColor Green
-    } else {
-        Write-Host "SUCCESS: Gateway ping confirmed (HTTP $statusCode)." -ForegroundColor Green
-    }
-    exit 0
-} elseif ($statusCode -eq 401) {
-    if ($ApiKey) {
-        Write-Host "ERROR: API key was provided but rejected by gateway (HTTP 401 Unauthorized). Verify key permissions." -ForegroundColor Red
+    Write-Host "Supabase API Response Status Code: $($res.HttpCode)" -ForegroundColor Yellow
+    $statusCode = 0
+    if (-not [int]::TryParse($res.HttpCode, [ref]$statusCode)) {
+        Write-Host "ERROR: Non-numeric HTTP response received: $($res.HttpCode)" -ForegroundColor Red
         exit 1
-    } else {
+    }
+
+    if ($statusCode -ge 200 -and $statusCode -lt 300) {
+        Write-Host "SUCCESS: Gateway ping confirmed (HTTP $statusCode)." -ForegroundColor Green
+        exit 0
+    } elseif ($statusCode -eq 401) {
         Write-Host "GATEWAY ACTIVE: REST gateway responded (HTTP 401 Unauthorized)." -ForegroundColor Yellow
         Write-Host "Inbound network traffic recorded by Supabase gateway. Set `$env:VITE_SUPABASE_ANON_KEY to perform an authenticated database query." -ForegroundColor Gray
         exit 2
+    } else {
+        Write-Host "ERROR: Received unexpected HTTP status code $statusCode" -ForegroundColor Red
+        exit 1
     }
-} else {
-    Write-Host "ERROR: Received unexpected HTTP status code $statusCode" -ForegroundColor Red
-    exit 1
 }
