@@ -241,7 +241,7 @@ export default function Settings({
 
         <form onSubmit={handleSaveDB} className="space-y-4">
           <p className="text-xs text-slate-400 leading-relaxed">
-            By default, data is saved directly in your browser (LocalStorage). To synchronize scoring in real-time across multiple participants' devices, enter your free Supabase credentials below. Paste the SQL setup script from <code className="text-[#6E172C] bg-slate-850 px-1 py-0.5 rounded border border-slate-800">schema.sql</code> into your Supabase project dashboard first.
+            All sessions, blind ratings, historical archives, and personal cellar wishlists are stored in and synchronized via Supabase across everyone's devices. Paste the SQL setup script from <code className="text-[#6E172C] bg-slate-850 px-1 py-0.5 rounded border border-slate-800">fix_security.sql</code> into your Supabase project dashboard if initializing a new project.
           </p>
 
           <div>

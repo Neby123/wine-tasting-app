@@ -477,7 +477,7 @@ export default function IntakeForm({
 
         {/* Right Side: Saturday Lineup Preset + Logged Wines List */}
         <div className="lg:col-span-3 space-y-6">
-          {isHost && (
+          {isHost && (!sessionName || sessionName.toLowerCase().includes('grigio') || sessionDate === '2026-11-14') && (
             <div className="glass-panel rounded-2xl p-5 border border-amber-300 bg-amber-50 text-amber-950 space-y-4 shadow-sm">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-amber-200/80 pb-3">
                 <div>

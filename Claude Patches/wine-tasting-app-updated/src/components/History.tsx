@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { HistoricalTasting, HISTORICAL_SESSIONS } from '../utils/mockData';
+import { HistoricalTasting } from '../utils/mockData';
 import { db } from '../utils/supabase';
 import { Trophy, Calendar, DollarSign, Award, ChevronDown, ChevronUp, RefreshCw } from 'lucide-react';
 
@@ -18,10 +18,10 @@ export default function History({ voterName, onRefresh }: HistoryProps) {
     setLoading(true);
     try {
       const data = await db.getHistory();
-      setSessions(data && data.length > 0 ? data : HISTORICAL_SESSIONS);
+      setSessions(data || []);
     } catch (err) {
       console.error("Error loading history:", err);
-      setSessions(HISTORICAL_SESSIONS);
+      setSessions([]);
     } finally {
       setLoading(false);
     }
@@ -169,12 +169,24 @@ export default function History({ voterName, onRefresh }: HistoryProps) {
             }
 
             if (!displayGiantKiller && sessionWines.length >= 2) {
-              const pricedWines = [...sessionWines].filter(w => typeof w.price === 'number' && w.price > 0).sort((a, b) => a.price - b.price);
-              if (pricedWines.length >= 2) {
-                const cheapest = pricedWines[0];
-                const pricierOutperformed = pricedWines.slice(1).find(w => w.price > cheapest.price && cheapest.score > w.score);
-                if (pricierOutperformed) {
-                  displayGiantKiller = `${cheapest.name} ($${cheapest.price.toFixed(2)}) beat ${pricierOutperformed.name} ($${pricierOutperformed.price.toFixed(2)})`;
+              const pricedWines = [...sessionWines]
+                .filter(w => typeof w.price === 'number' && w.price > 0)
+                .sort((a, b) => a.price - b.price);
+              let bestMargin = 0;
+              let bestScoreDiff = -1;
+              for (let i = 0; i < pricedWines.length; i++) {
+                for (let j = i + 1; j < pricedWines.length; j++) {
+                  const cheaper = pricedWines[i];
+                  const pricier = pricedWines[j];
+                  if (pricier.price > cheaper.price && cheaper.score > pricier.score) {
+                    const margin = pricier.price - cheaper.price;
+                    const scoreDiff = cheaper.score - pricier.score;
+                    if (margin > bestMargin || (margin === bestMargin && scoreDiff > bestScoreDiff)) {
+                      bestMargin = margin;
+                      bestScoreDiff = scoreDiff;
+                      displayGiantKiller = `${cheaper.name} ($${cheaper.price.toFixed(2)}) beat ${pricier.name} ($${pricier.price.toFixed(2)})`;
+                    }
+                  }
                 }
               }
             }

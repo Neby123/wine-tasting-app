@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { db, supabase } from './utils/supabase';
-import { WineSession, Wine, Vote, HistoricalTasting } from './utils/mockData';
+import { WineSession, Wine, Vote } from './utils/mockData';
 import IntakeForm from './components/IntakeForm';
 import TastingSheet from './components/TastingSheet';
 import Dashboard from './components/Dashboard';
@@ -34,8 +34,8 @@ export default function App() {
   const [currentTab, setCurrentTab] = useState<TabValue>(getTabFromHash);
   
   // New session input
-  const [newSessionName, setNewSessionName] = useState('Fifty Shades of Grigio');
-  const [newSessionDate, setNewSessionDate] = useState('2026-11-14');
+  const [newSessionName, setNewSessionName] = useState('');
+  const [newSessionDate, setNewSessionDate] = useState(() => new Date().toISOString().split('T')[0]);
   const [creatingSession, setCreatingSession] = useState(false);
 
   const loadSeqRef = React.useRef(0);
@@ -70,49 +70,15 @@ export default function App() {
     }
   };
 
-  // Initial load & one-time history migration
+  // Initial load & cleanup of legacy mock/local history keys
   useEffect(() => {
     loadData();
-
-    const runMigration = async () => {
-      if (!supabase) return;
-      const localHistoryKey = 'WINE_TASTING_HISTORY';
-      const mockHistoryKey = 'WINE_TASTING_MOCK_HISTORY';
-      const localDataStr = localStorage.getItem(localHistoryKey) || localStorage.getItem(mockHistoryKey);
-      if (!localDataStr) return;
-
-      try {
-        const localHistory = JSON.parse(localDataStr) as HistoricalTasting[];
-        if (!Array.isArray(localHistory) || localHistory.length === 0) return;
-
-        const { data: existingRows, error } = await supabase
-          .from('history')
-          .select('id');
-
-        if (error) {
-          console.warn("History migration check failed:", error);
-          return;
-        }
-
-        const existingIds = new Set((existingRows || []).map(r => r.id));
-        const missingSessions = localHistory.filter(s => !existingIds.has(s.id));
-
-        if (missingSessions.length > 0) {
-          console.log(`Migrating ${missingSessions.length} sessions from localStorage to Supabase...`);
-          for (const session of missingSessions) {
-            if (!session.votes) {
-              session.votes = [];
-            }
-            await db.addHistorySession(session);
-          }
-          console.log("Migration complete!");
-        }
-      } catch (err) {
-        console.error("Migration failed:", err);
-      }
-    };
-
-    runMigration();
+    try {
+      localStorage.removeItem('WINE_TASTING_HISTORY');
+      localStorage.removeItem('WINE_TASTING_MOCK_HISTORY');
+    } catch {
+      // Ignore storage access errors
+    }
   }, []);
 
   // Reflect the active tab into the URL hash. Guarded on difference so this
@@ -384,21 +350,33 @@ export default function App() {
       const finalValuePool = bestValuePool.length > 0 ? bestValuePool : wineStats;
       const bestValue = [...finalValuePool].sort((a, b) => b.valueRatio - a.valueRatio)[0];
 
-      // Dynamic Giant Killer calculation: cheapest wine that scored higher than a more expensive wine
+      // Dynamic Giant Killer calculation: largest price upset (cheaper wine beating pricier wine)
       let giantKillerMatch: string | undefined = undefined;
-      const sortedByPrice = [...wineStats].filter(w => typeof w.price === 'number' && w.price > 0).sort((a, b) => a.price - b.price);
-      if (sortedByPrice.length >= 2) {
-        const cheapest = sortedByPrice[0];
-        const pricierOutperformed = sortedByPrice.slice(1).find(w => w.price > cheapest.price && cheapest.score > w.score);
-        if (pricierOutperformed) {
-          giantKillerMatch = `${cheapest.name} ($${cheapest.price.toFixed(2)}) beat ${pricierOutperformed.name} ($${pricierOutperformed.price.toFixed(2)})`;
+      const sortedByPrice = [...wineStats]
+        .filter(w => typeof w.price === 'number' && w.price > 0)
+        .sort((a, b) => a.price - b.price);
+      let bestMargin = 0;
+      let bestScoreDiff = -1;
+      for (let i = 0; i < sortedByPrice.length; i++) {
+        for (let j = i + 1; j < sortedByPrice.length; j++) {
+          const cheaper = sortedByPrice[i];
+          const pricier = sortedByPrice[j];
+          if (pricier.price > cheaper.price && cheaper.score > pricier.score) {
+            const margin = pricier.price - cheaper.price;
+            const scoreDiff = cheaper.score - pricier.score;
+            if (margin > bestMargin || (margin === bestMargin && scoreDiff > bestScoreDiff)) {
+              bestMargin = margin;
+              bestScoreDiff = scoreDiff;
+              giantKillerMatch = `${cheaper.name} ($${cheaper.price.toFixed(2)}) beat ${pricier.name} ($${pricier.price.toFixed(2)})`;
+            }
+          }
         }
       }
 
       const report = {
         id: activeSession.id,
         name: activeSession.name,
-        date: activeSession.date,
+        date: (activeSession.date || '').split('T')[0],
         winnerName: bisWine?.name || (sorted[0] ? sorted[0].name : "Unknown"),
         winnerPrice: bisWine?.price || (sorted[0] ? sorted[0].price : 0),
         winnerBroughtBy: bisWine?.submitted_by || (sorted[0] ? sorted[0].submitted_by : "Unknown"),
@@ -460,7 +438,7 @@ export default function App() {
         throw statusErr;
       }
 
-      // 5. Sync buy-again intents locally and sync cloud row ONLY for current device owner
+      // 5. Sync buy-again intents to Supabase ONLY for current device owner
       // so another voter's wishlist entries are never stamped with the host's voter_token.
       const actingVoterLower = voterName.trim().toLowerCase();
       const existingCloudWishlist = actingVoterLower
@@ -475,51 +453,23 @@ export default function App() {
         const matchedWine = updatedWines.find(w => w.blind_label === v.wine_1_label);
         if (!matchedWine) continue;
         const voterClean = v.voter_name.trim();
-        const storageKey = `WINE_TASTING_WISHLIST_${voterClean.toLowerCase()}`;
         const wishKey = `${voterClean.toLowerCase()}::${matchedWine.name.trim().toLowerCase()}`;
-        try {
-          const existingRaw = localStorage.getItem(storageKey);
-          const existing = existingRaw ? JSON.parse(existingRaw) : [];
-          const alreadySavedLocal = Array.isArray(existing) && existing.some(
-            (item: any) => (item.wine_name || '').toLowerCase() === matchedWine.name.toLowerCase()
-          );
-          if (!alreadySavedLocal) {
-            const newWish = {
-              id: 'wish-' + Date.now() + '-' + Math.random().toString(36).substring(2, 7),
-              voter_name: voterClean,
-              wine_name: matchedWine.name,
-              producer: matchedWine.producer,
-              vintage: matchedWine.vintage,
-              varietal: matchedWine.varietal,
-              region: matchedWine.region,
-              price: matchedWine.price,
-              source_session_id: activeSession.id,
-              source_history_id: report.id,
-              note: v.notes_wine_1 || undefined,
-              created_at: new Date().toISOString()
-            };
-            const updatedList = [newWish, ...(Array.isArray(existing) ? existing : [])];
-            localStorage.setItem(storageKey, JSON.stringify(updatedList));
-          }
-          if (actingVoterLower && voterClean.toLowerCase() === actingVoterLower && !cloudWishKeys.has(wishKey)) {
-            cloudWishKeys.add(wishKey);
-            await db.addWishlistItem({
-              voter_name: voterClean,
-              wine_name: matchedWine.name,
-              producer: matchedWine.producer,
-              vintage: matchedWine.vintage,
-              varietal: matchedWine.varietal,
-              region: matchedWine.region,
-              price: matchedWine.price,
-              source_session_id: activeSession.id,
-              source_history_id: report.id,
-              note: v.notes_wine_1 || undefined
-            }).catch((wishErr) => {
-              console.warn('Cloud wishlist sync skipped:', wishErr);
-            });
-          }
-        } catch {
-          // Best-effort wishlist sync should never block reveal
+        if (actingVoterLower && voterClean.toLowerCase() === actingVoterLower && !cloudWishKeys.has(wishKey)) {
+          cloudWishKeys.add(wishKey);
+          await db.addWishlistItem({
+            voter_name: voterClean,
+            wine_name: matchedWine.name,
+            producer: matchedWine.producer,
+            vintage: matchedWine.vintage,
+            varietal: matchedWine.varietal,
+            region: matchedWine.region,
+            price: matchedWine.price,
+            source_session_id: activeSession.id,
+            source_history_id: report.id,
+            note: v.notes_wine_1 || undefined
+          }).catch((wishErr) => {
+            console.warn('Cloud wishlist sync skipped:', wishErr);
+          });
         }
       }
 

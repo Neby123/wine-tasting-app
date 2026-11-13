@@ -1,5 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
-import { WineSession, Wine, Vote, HistoricalTasting, WishlistItem, WineEnrichment, HISTORICAL_SESSIONS } from './mockData';
+import { WineSession, Wine, Vote, HistoricalTasting, WishlistItem, WineEnrichment } from './mockData';
 
 const getSBConfig = () => {
   // Check URL params first (useful for guest invite links)
@@ -407,62 +407,30 @@ export const db = {
   },
 
   getHistory: async (): Promise<HistoricalTasting[]> => {
-    try {
-      const client = ensureClient();
-      const { data, error } = await client
-        .from('history')
-        .select('*')
-        .order('date', { ascending: false });
+    const client = ensureClient();
+    const { data, error } = await client
+      .from('history')
+      .select('*')
+      .order('date', { ascending: false });
 
-      if (error) {
-        console.warn("Supabase history query returned error, using fallback:", error);
-        return HISTORICAL_SESSIONS;
-      }
-      
-      if (!data || data.length === 0) {
-        console.log("History table is empty. Auto-seeding historical sessions into Supabase...");
-        try {
-          const rowsToInsert = HISTORICAL_SESSIONS.map((session: HistoricalTasting) => ({
-            id: session.id,
-            name: session.name,
-            date: session.date,
-            winner_name: session.winnerName,
-            winner_price: session.winnerPrice,
-            winner_brought_by: session.winnerBroughtBy,
-            wines_count: session.winesCount,
-            group_winner: session.groupWinner,
-            second_place: session.secondPlace,
-            best_value: session.bestValue,
-            giant_killer: session.giantKiller || null,
-            wines: session.wines,
-            votes: session.votes || []
-          }));
-          await client.from('history').upsert(rowsToInsert);
-        } catch (seedErr) {
-          console.warn("Failed to auto-seed history into Supabase:", seedErr);
-        }
-        return HISTORICAL_SESSIONS;
-      }
+    if (error) throw error;
+    if (!data || data.length === 0) return [];
 
-      return data.map(row => ({
-        id: row.id,
-        name: row.name,
-        date: row.date,
-        winnerName: row.winner_name,
-        winnerPrice: Number(row.winner_price),
-        winnerBroughtBy: row.winner_brought_by,
-        winesCount: row.wines_count,
-        groupWinner: row.group_winner,
-        secondPlace: row.second_place,
-        bestValue: row.best_value,
-        giantKiller: row.giant_killer || undefined,
-        wines: row.wines,
-        votes: row.votes
-      }));
-    } catch (err) {
-      console.warn("getHistory caught error, returning HISTORICAL_SESSIONS fallback:", err);
-      return HISTORICAL_SESSIONS;
-    }
+    return data.map(row => ({
+      id: row.id,
+      name: row.name,
+      date: (row.date || '').split('T')[0],
+      winnerName: row.winner_name,
+      winnerPrice: Number(row.winner_price),
+      winnerBroughtBy: row.winner_brought_by,
+      winesCount: row.wines_count,
+      groupWinner: row.group_winner,
+      secondPlace: row.second_place,
+      bestValue: row.best_value,
+      giantKiller: row.giant_killer || undefined,
+      wines: Array.isArray(row.wines) ? row.wines : [],
+      votes: Array.isArray(row.votes) ? row.votes.map(hydrateVoteFromDb) : []
+    }));
   },
 
   addHistorySession: async (session: HistoricalTasting): Promise<void> => {
@@ -501,8 +469,8 @@ export const db = {
         .select(WISHLIST_PUBLIC_COLUMNS)
         .order('created_at', { ascending: false });
 
-      if (voterName) {
-        query = query.eq('voter_name', voterName);
+      if (voterName && voterName.trim()) {
+        query = query.ilike('voter_name', voterName.trim());
       }
 
       const { data, error } = await query;
@@ -529,7 +497,7 @@ export const db = {
   },
 
   removeWishlistItem: async (id: string): Promise<void> => {
-    if (!id || id.startsWith('wish-')) return; // Skip temp local IDs to avoid Postgres UUID type error
+    if (!id) return;
     const client = ensureClient();
     const { error } = await client
       .from('wishlist')

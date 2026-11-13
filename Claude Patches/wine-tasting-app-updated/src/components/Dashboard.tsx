@@ -195,8 +195,14 @@ export default function Dashboard({
     // 1. Best in Show (Grand Champion: Highest scoring wine)
     const bestInShow = leaderboard[0];
 
-    // 2. People's Choice (Highest average rating)
-    const peoplesChoice = [...wineStats].sort((a, b) => b.score - a.score)[0];
+    // 2. People's Choice / Runner-Up (avoid duplicating Best in Show in standalone mode)
+    const sortedByScore = [...wineStats].sort((a, b) => b.score - a.score);
+    let peoplesChoice = sortedByScore[0];
+    let isRunnerUp = false;
+    if (peoplesChoice && bestInShow && peoplesChoice.id === bestInShow.id && leaderboard.length >= 2) {
+      peoplesChoice = leaderboard[1];
+      isRunnerUp = true;
+    }
 
     // 3. Best Value (Highest rating-to-price ratio, preferring winners or >= 50 score in standalone mode)
     const bestValuePool = wineStats.filter(w => w.wins > 0);
@@ -233,17 +239,29 @@ export default function Dashboard({
     });
 
     if (!giantKillerMatch && wineStats.length >= 2) {
-      const sortedByPrice = [...wineStats].filter(w => typeof w.price === 'number' && w.price > 0).sort((a, b) => (a.price || 0) - (b.price || 0));
-      if (sortedByPrice.length >= 2) {
-        const cheapest = sortedByPrice[0];
-        const pricierOutperformed = sortedByPrice.slice(1).find(w => w.price > cheapest.price && cheapest.score > w.score);
-        if (pricierOutperformed) {
-          giantKillerMatch = {
-            matchId: 'Decoupled Rating',
-            winner: cheapest,
-            loser: pricierOutperformed,
-            margin: pricierOutperformed.price - cheapest.price
-          };
+      const sortedByPrice = [...wineStats]
+        .filter(w => typeof w.price === 'number' && w.price > 0)
+        .sort((a, b) => (a.price || 0) - (b.price || 0));
+      let bestMargin = 0;
+      let bestScoreDiff = -1;
+      for (let i = 0; i < sortedByPrice.length; i++) {
+        for (let j = i + 1; j < sortedByPrice.length; j++) {
+          const cheaper = sortedByPrice[i];
+          const pricier = sortedByPrice[j];
+          if (pricier.price > cheaper.price && cheaper.score > pricier.score) {
+            const margin = pricier.price - cheaper.price;
+            const scoreDiff = cheaper.score - pricier.score;
+            if (margin > bestMargin || (margin === bestMargin && scoreDiff > bestScoreDiff)) {
+              bestMargin = margin;
+              bestScoreDiff = scoreDiff;
+              giantKillerMatch = {
+                matchId: 'Decoupled Rating',
+                winner: cheaper,
+                loser: pricier,
+                margin
+              };
+            }
+          }
         }
       }
     }
@@ -251,6 +269,7 @@ export default function Dashboard({
     return {
       bestInShow,
       peoplesChoice,
+      isRunnerUp,
       bestValue,
       overpriced,
       giantKiller: giantKillerMatch
@@ -534,7 +553,9 @@ export default function Dashboard({
                 <div className="absolute top-0 right-0 w-16 h-16 bg-rose-400/10 rounded-bl-full blur-sm" />
                 <div className="space-y-2">
                   <Award className="w-8 h-8 text-rose-700 mx-auto" />
-                  <p className="text-[10px] text-rose-800 font-extrabold uppercase tracking-widest">Highest Rated ({awards.peoplesChoice.score}/100)</p>
+                  <p className="text-[10px] text-rose-800 font-extrabold uppercase tracking-widest">
+                    {awards.isRunnerUp ? `Runner-Up (${awards.peoplesChoice.score}/100)` : `Highest Rated (${awards.peoplesChoice.score}/100)`}
+                  </p>
                   <h4 className="text-base font-bold text-slate-100 font-serif leading-tight line-clamp-2">{awards.peoplesChoice.name}</h4>
                 </div>
                 <div className="text-xs text-slate-500 mt-3 pt-2 border-t border-rose-200 flex justify-between items-center">
