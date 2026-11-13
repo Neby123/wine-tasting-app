@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Wine, Vote } from '../utils/mockData';
-import { ChevronDown, ChevronUp, CheckCircle, DollarSign, Heart, Sliders, Edit3, Sparkles } from 'lucide-react';
+import { ChevronDown, ChevronUp, CheckCircle, DollarSign, Heart, Sliders, Edit3, Sparkles, UserCheck } from 'lucide-react';
 
 interface TastingSheetProps {
   wines: Wine[];
@@ -18,16 +18,26 @@ interface TastingSheetProps {
       sweetness?: number;
     }
   ) => Promise<void>;
+  onUpdateVoterName?: (name: string) => void;
 }
+
+const QUICK_TASTERS = ['Ben', 'Monica', 'Jack', 'Alexcia', 'David', 'Abby'];
+
+const isSameVoter = (a?: string, b?: string) =>
+  (a || '').trim().toLowerCase() !== '' &&
+  (a || '').trim().toLowerCase() === (b || '').trim().toLowerCase();
 
 export default function TastingSheet({
   wines,
   voterName,
   votes,
-  onSubmitStandaloneRating
+  onSubmitStandaloneRating,
+  onUpdateVoterName
 }: TastingSheetProps) {
   // Track which wine card accordions are expanded (default: ALL COLLAPSED)
   const [expandedLabels, setExpandedLabels] = useState<Record<string, boolean>>({});
+  const [switchingTaster, setSwitchingTaster] = useState(false);
+  const [customTasterName, setCustomTasterName] = useState('');
 
   // Local draft states for each wine evaluation card
   const [scores, setScores] = useState<Record<string, number>>({});
@@ -38,6 +48,7 @@ export default function TastingSheet({
   const [bodies, setBodies] = useState<Record<string, number | undefined>>({});
   const [sweetnesses, setSweetnesses] = useState<Record<string, number | undefined>>({});
   const [savingLabel, setSavingLabel] = useState<string | null>(null);
+  const prevVoterRef = React.useRef(voterName);
 
   // Initialize draft states from existing votes if present
   React.useEffect(() => {
@@ -50,7 +61,7 @@ export default function TastingSheet({
     const newSweetness: Record<string, number | undefined> = {};
 
     votes.forEach(v => {
-      if (v.voter_name === voterName) {
+      if (isSameVoter(v.voter_name, voterName)) {
         const label = v.wine_1_label;
         newScores[label] = v.slider_value;
         newNotes[label] = v.notes_wine_1 || '';
@@ -61,6 +72,19 @@ export default function TastingSheet({
         newSweetness[label] = v.sweetness_1;
       }
     });
+
+    if (prevVoterRef.current !== voterName) {
+      prevVoterRef.current = voterName;
+      setExpandedLabels({});
+      setScores(newScores);
+      setNotes(newNotes);
+      setPerceivedPrices(newPrices);
+      setBuyAgainIntents(newBuyAgain);
+      setAcidities(newAcidity);
+      setBodies(newBody);
+      setSweetnesses(newSweetness);
+      return;
+    }
 
     setScores(prev => ({ ...newScores, ...prev }));
     setNotes(prev => ({ ...newNotes, ...prev }));
@@ -79,6 +103,10 @@ export default function TastingSheet({
   };
 
   const handleSaveWineRating = async (label: string) => {
+    if (!voterName.trim()) {
+      alert('Please select or enter your taster name at the top first.');
+      return;
+    }
     const currentScore = scores[label] ?? 50;
     setSavingLabel(label);
     try {
@@ -108,7 +136,7 @@ export default function TastingSheet({
   const ratedWinesCount = wines.filter((w, idx) => {
     const label = w.blind_label || String.fromCharCode(65 + idx);
     return votes.some(v => 
-      (v.voter_name || '').trim().toLowerCase() === (voterName || '').trim().toLowerCase() && 
+      isSameVoter(v.voter_name, voterName) && 
       (v.wine_1_label === label || v.match_id === `STANDALONE_${label}`)
     );
   }).length;
@@ -116,14 +144,33 @@ export default function TastingSheet({
   const totalWinesCount = wines?.length || 6;
   const progressPercent = Math.round((ratedWinesCount / totalWinesCount) * 100);
 
+  const handleSelectTaster = (selectedName: string) => {
+    const trimmed = selectedName.trim();
+    if (!trimmed || !onUpdateVoterName) return;
+    onUpdateVoterName(trimmed);
+    setSwitchingTaster(false);
+    setCustomTasterName('');
+  };
+
   return (
     <div className="max-w-2xl mx-auto space-y-6 animate-fade-in pb-12">
       {/* Header Greeting Banner */}
       <div className="glass-panel p-6 rounded-2xl border-wine-800/30 text-center space-y-2 relative overflow-hidden">
         <div className="absolute top-0 right-0 w-32 h-32 bg-wine-500/10 rounded-full blur-3xl" />
-        <span className="text-xs bg-wine-950/60 border border-wine-800/40 text-wine-300 font-mono px-3 py-1 rounded-full uppercase tracking-wider inline-flex items-center gap-1.5">
-          <Sparkles className="w-3.5 h-3.5 text-amber-400" /> Taster: <strong>{voterName}</strong>
-        </span>
+        <div className="flex items-center justify-center gap-2 flex-wrap">
+          <span className="text-xs bg-wine-950/60 border border-wine-800/40 text-wine-300 font-mono px-3 py-1 rounded-full uppercase tracking-wider inline-flex items-center gap-1.5">
+            <Sparkles className="w-3.5 h-3.5 text-amber-400" /> Taster: <strong>{voterName || 'Unselected'}</strong>
+          </span>
+          {onUpdateVoterName && voterName.trim() && (
+            <button
+              type="button"
+              onClick={() => setSwitchingTaster(s => !s)}
+              className="text-[11px] text-slate-400 hover:text-amber-300 underline underline-offset-2 transition-colors"
+            >
+              {switchingTaster ? 'Cancel' : 'Switch Taster'}
+            </button>
+          )}
+        </div>
         <h2 className="text-2xl font-bold font-serif text-slate-100">Blind Tasting Sheet</h2>
         <p className="text-xs text-slate-400 max-w-md mx-auto">
           Taste at your own pace. Expand any wine card below to log your rating and notes.
@@ -142,6 +189,56 @@ export default function TastingSheet({
         </div>
       </div>
 
+      {/* Inline Taster Selection Prompt when voterName is missing or switching */}
+      {(!voterName.trim() || switchingTaster) && (
+        <div className="glass-panel rounded-2xl p-5 border border-amber-500/40 bg-amber-950/15 space-y-3">
+          <div className="flex items-center gap-2 text-amber-300 text-sm font-bold">
+            <UserCheck className="w-4 h-4" />
+            <span>{voterName.trim() ? 'Switch Active Taster' : 'Select Your Taster Name to Begin'}</span>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {QUICK_TASTERS.map(nameOption => (
+              <button
+                key={nameOption}
+                type="button"
+                onClick={() => handleSelectTaster(nameOption)}
+                className={`px-3.5 py-1.5 rounded-full text-xs font-semibold border transition-all ${
+                  isSameVoter(voterName, nameOption)
+                    ? 'bg-amber-500/25 border-amber-400 text-amber-200'
+                    : 'bg-slate-950 border-slate-800 text-slate-300 hover:border-wine-600 hover:text-white'
+                }`}
+              >
+                {nameOption}
+              </button>
+            ))}
+          </div>
+          {onUpdateVoterName && (
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                handleSelectTaster(customTasterName);
+              }}
+              className="flex gap-2 pt-1"
+            >
+              <input
+                type="text"
+                value={customTasterName}
+                onChange={(e) => setCustomTasterName(e.target.value)}
+                placeholder="Or enter a custom name..."
+                className="flex-1 px-3 py-1.5 bg-slate-950 border border-slate-800 focus:border-wine-500 rounded-lg text-xs text-slate-200 focus:outline-none"
+              />
+              <button
+                type="submit"
+                disabled={!customTasterName.trim()}
+                className="px-4 py-1.5 bg-wine-700 hover:bg-wine-600 disabled:bg-slate-800 disabled:text-slate-500 text-white text-xs font-semibold rounded-lg transition-colors"
+              >
+                Set Name
+              </button>
+            </form>
+          )}
+        </div>
+      )}
+
       {/* Accordion Cards for Wines (A through F) */}
       <div className="space-y-3">
         {wines.map((wine, idx) => {
@@ -149,7 +246,7 @@ export default function TastingSheet({
           const isExpanded = !!expandedLabels[label];
           
           // Check if this wine has been rated
-          const existingVote = votes.find(v => v.voter_name === voterName && (v.wine_1_label === label || v.match_id === `STANDALONE_${label}`));
+          const existingVote = votes.find(v => isSameVoter(v.voter_name, voterName) && (v.wine_1_label === label || v.match_id === `STANDALONE_${label}`));
           const currentScore = scores[label] ?? (existingVote ? existingVote.slider_value : 50);
 
           return (
@@ -417,8 +514,8 @@ export default function TastingSheet({
                     <button
                       type="button"
                       onClick={() => handleSaveWineRating(label)}
-                      disabled={savingLabel === label}
-                      className="w-full sm:w-auto py-2.5 px-6 bg-gradient-to-r from-wine-800 to-wine-600 hover:from-wine-700 hover:to-wine-500 text-white font-semibold rounded-xl text-sm shadow-lg shadow-wine-950/20 transition-all flex items-center justify-center gap-2"
+                      disabled={savingLabel === label || !voterName.trim()}
+                      className="w-full sm:w-auto py-2.5 px-6 bg-gradient-to-r from-wine-800 to-wine-600 hover:from-wine-700 hover:to-wine-500 disabled:from-slate-800 disabled:to-slate-900 disabled:text-slate-500 text-white font-semibold rounded-xl text-sm shadow-lg shadow-wine-950/20 transition-all flex items-center justify-center gap-2"
                     >
                       {savingLabel === label ? 'Saving Rating...' : `Save Rating for Wine ${label}`}
                     </button>

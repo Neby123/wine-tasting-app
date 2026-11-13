@@ -39,6 +39,7 @@ export default function App() {
   const [creatingSession, setCreatingSession] = useState(false);
 
   const loadSeqRef = React.useRef(0);
+  const revealingRef = React.useRef(false);
 
   // Load active session and data
   const loadData = async () => {
@@ -274,6 +275,19 @@ export default function App() {
     }
   };
 
+  const handleAddWinesBatch = async (winesData: Omit<Wine, 'id' | 'session_id' | 'revealed'>[]) => {
+    if (!activeSession || winesData.length === 0) return;
+    try {
+      const inserted = await db.addWinesBatch(
+        winesData.map(w => ({ ...w, session_id: activeSession.id }))
+      );
+      setWines(prev => [...prev, ...inserted]);
+    } catch (err) {
+      console.error('Failed to add batch wines:', err);
+      throw err;
+    }
+  };
+
   const handleDeleteWine = async (wineId: string) => {
     try {
       await db.deleteWine(wineId);
@@ -281,6 +295,17 @@ export default function App() {
     } catch (err) {
       console.error('Failed to delete wine:', err);
       alert('Failed to delete wine. Please check your connection and try again.');
+    }
+  };
+
+  const handleUpdateWine = async (wineId: string, updates: Omit<Partial<Omit<Wine, 'id' | 'session_id'>>, 'vintage'> & { vintage?: string | null }) => {
+    try {
+      const updated = await db.updateWine(wineId, updates);
+      setWines(prev => prev.map(w => w.id === wineId ? updated : w));
+    } catch (err) {
+      console.error('Failed to update wine:', err);
+      alert('Unable to update bottle details. Ensure the session is in setup mode or enable Host Mode in Settings.');
+      throw err;
     }
   };
 
@@ -296,25 +321,38 @@ export default function App() {
       setCurrentTab('tasting');
     } catch (err) {
       console.error(err);
-      alert("Failed to start tasting session: " + (err as Error).message);
+      alert("Failed to start tasting session. Check your host connection and try again.");
     } finally {
       setLoading(false);
     }
   };
 
   const handleRevealWines = async (mapping: Record<string, string>) => {
-    if (!activeSession) return;
+    if (!activeSession || revealingRef.current || activeSession.status === 'completed') return;
+    revealingRef.current = true;
     setLoading(true);
     try {
-      // 1. Save mapping and reveal wines in database
-      const updatedWines = await db.mapAndRevealWines(activeSession.id, mapping);
-      
-      // 2. Set session status to completed
-      const updatedSession = await db.updateSessionStatus(activeSession.id, 'completed');
+      // 1. Fetch latest wines & votes so late submissions during reveal are never dropped
+      const [latestWinesRaw, latestVotesRaw] = await Promise.all([
+        db.getWines(activeSession.id).catch(() => wines),
+        db.getVotes(activeSession.id).catch(() => votes)
+      ]);
+      const sourceWines = latestWinesRaw.length > 0 ? latestWinesRaw : wines;
+      const sourceVotes = latestVotesRaw.length > 0 ? latestVotesRaw : votes;
 
-      // 3. Compile history report based on 0-100 standalone appreciation scores
+      // 2. Build idempotent archive report first (upsert keyed by session.id)
+      const labelByWineId: Record<string, string> = {};
+      Object.entries(mapping).forEach(([label, wineId]) => {
+        labelByWineId[wineId] = label;
+      });
+      const mappedWinesPreview = sourceWines.map(w => ({
+        ...w,
+        blind_label: labelByWineId[w.id] || w.blind_label,
+        revealed: Boolean(labelByWineId[w.id] || w.revealed)
+      }));
+
       const getWineAppreciationIndex = (label: string) => {
-        const wineVotes = votes.filter(v => v.wine_1_label === label || v.wine_2_label === label);
+        const wineVotes = sourceVotes.filter(v => v.wine_1_label === label || v.wine_2_label === label);
         if (wineVotes.length === 0) return 50;
         let scoreSum = 0;
         wineVotes.forEach(v => {
@@ -329,7 +367,7 @@ export default function App() {
         return Math.round(scoreSum / wineVotes.length);
       };
 
-      const wineStats = updatedWines.map(w => {
+      const wineStats = mappedWinesPreview.map(w => {
         const label = w.blind_label || '';
         const score = getWineAppreciationIndex(label);
         return {
@@ -342,7 +380,9 @@ export default function App() {
 
       const sorted = [...wineStats].sort((a, b) => b.score - a.score);
       const bisWine = sorted[0];
-      const bestValue = [...wineStats].sort((a, b) => b.valueRatio - a.valueRatio)[0];
+      const bestValuePool = wineStats.filter(w => w.score >= 50);
+      const finalValuePool = bestValuePool.length > 0 ? bestValuePool : wineStats;
+      const bestValue = [...finalValuePool].sort((a, b) => b.valueRatio - a.valueRatio)[0];
 
       // Dynamic Giant Killer calculation: cheapest wine that scored higher than a more expensive wine
       let giantKillerMatch: string | undefined = undefined;
@@ -362,7 +402,7 @@ export default function App() {
         winnerName: bisWine?.name || (sorted[0] ? sorted[0].name : "Unknown"),
         winnerPrice: bisWine?.price || (sorted[0] ? sorted[0].price : 0),
         winnerBroughtBy: bisWine?.submitted_by || (sorted[0] ? sorted[0].submitted_by : "Unknown"),
-        winesCount: updatedWines.length,
+        winesCount: mappedWinesPreview.length,
         groupWinner: bisWine ? `${bisWine.name} ($${bisWine.price.toFixed(2)})` : (sorted[0] ? `${sorted[0].name} ($${sorted[0].price.toFixed(2)})` : "N/A"),
         secondPlace: sorted[1] ? `${sorted[1].name} ($${sorted[1].price.toFixed(2)})` : "N/A",
         bestValue: bestValue ? `${bestValue.name} ($${bestValue.price.toFixed(2)})` : "N/A",
@@ -379,27 +419,120 @@ export default function App() {
           country: w.country,
           style: w.style
         })),
-        votes: votes.map(v => ({
+        votes: sourceVotes.map(v => ({
           voter_name: v.voter_name,
           match_id: v.match_id,
           wine_1_label: v.wine_1_label,
           wine_2_label: v.wine_2_label,
           slider_value: v.slider_value,
           notes_wine_1: v.notes_wine_1 || undefined,
-          notes_wine_2: v.notes_wine_2 || undefined
+          notes_wine_2: v.notes_wine_2 || undefined,
+          perceived_price_1: v.perceived_price_1,
+          buy_again_1: v.buy_again_1,
+          acidity_1: v.acidity_1,
+          body_1: v.body_1,
+          sweetness_1: v.sweetness_1
         }))
       };
 
-      // Add to archive
+      // 2. Persist idempotent history archive BEFORE mutating wines/session state
       await db.addHistorySession(report);
 
+      // 3. Reveal wines (db.mapAndRevealWines rolls back on partial failure)
+      const updatedWines = await db.mapAndRevealWines(activeSession.id, mapping);
+
+      // 4. Mark session completed (rollback reveal flags if status update fails)
+      let updatedSession: WineSession | null = null;
+      try {
+        updatedSession = await db.updateSessionStatus(activeSession.id, 'completed');
+      } catch (statusErr) {
+        const sbClient = supabase;
+        if (sbClient) {
+          const rollbackRes = await Promise.all(
+            Object.values(mapping).map(wineId =>
+              sbClient.from('wines').update({ revealed: false, blind_label: null }).eq('id', wineId)
+            )
+          );
+          rollbackRes.forEach(r => {
+            if (r.error) console.error('Wine reveal rollback error:', r.error);
+          });
+        }
+        throw statusErr;
+      }
+
+      // 5. Sync buy-again intents locally and sync cloud row ONLY for current device owner
+      // so another voter's wishlist entries are never stamped with the host's voter_token.
+      const actingVoterLower = voterName.trim().toLowerCase();
+      const existingCloudWishlist = actingVoterLower
+        ? await db.getWishlist(voterName.trim()).catch(() => [])
+        : [];
+      const cloudWishKeys = new Set(
+        existingCloudWishlist.map(w => `${(w.voter_name || '').trim().toLowerCase()}::${(w.wine_name || '').trim().toLowerCase()}`)
+      );
+
+      for (const v of sourceVotes) {
+        if (v.buy_again_1 !== 'yes' || !v.voter_name) continue;
+        const matchedWine = updatedWines.find(w => w.blind_label === v.wine_1_label);
+        if (!matchedWine) continue;
+        const voterClean = v.voter_name.trim();
+        const storageKey = `WINE_TASTING_WISHLIST_${voterClean.toLowerCase()}`;
+        const wishKey = `${voterClean.toLowerCase()}::${matchedWine.name.trim().toLowerCase()}`;
+        try {
+          const existingRaw = localStorage.getItem(storageKey);
+          const existing = existingRaw ? JSON.parse(existingRaw) : [];
+          const alreadySavedLocal = Array.isArray(existing) && existing.some(
+            (item: any) => (item.wine_name || '').toLowerCase() === matchedWine.name.toLowerCase()
+          );
+          if (!alreadySavedLocal) {
+            const newWish = {
+              id: 'wish-' + Date.now() + '-' + Math.random().toString(36).substring(2, 7),
+              voter_name: voterClean,
+              wine_name: matchedWine.name,
+              producer: matchedWine.producer,
+              vintage: matchedWine.vintage,
+              varietal: matchedWine.varietal,
+              region: matchedWine.region,
+              price: matchedWine.price,
+              source_session_id: activeSession.id,
+              source_history_id: report.id,
+              note: v.notes_wine_1 || undefined,
+              created_at: new Date().toISOString()
+            };
+            const updatedList = [newWish, ...(Array.isArray(existing) ? existing : [])];
+            localStorage.setItem(storageKey, JSON.stringify(updatedList));
+          }
+          if (actingVoterLower && voterClean.toLowerCase() === actingVoterLower && !cloudWishKeys.has(wishKey)) {
+            cloudWishKeys.add(wishKey);
+            await db.addWishlistItem({
+              voter_name: voterClean,
+              wine_name: matchedWine.name,
+              producer: matchedWine.producer,
+              vintage: matchedWine.vintage,
+              varietal: matchedWine.varietal,
+              region: matchedWine.region,
+              price: matchedWine.price,
+              source_session_id: activeSession.id,
+              source_history_id: report.id,
+              note: v.notes_wine_1 || undefined
+            }).catch((wishErr) => {
+              console.warn('Cloud wishlist sync skipped:', wishErr);
+            });
+          }
+        } catch {
+          // Best-effort wishlist sync should never block reveal
+        }
+      }
+
       setWines(updatedWines);
+      setVotes(sourceVotes);
       setActiveSession(updatedSession);
       setCurrentTab('dashboard');
     } catch (err) {
-      console.error(err);
-      alert("Failed to reveal wines: " + (err as Error).message);
+      console.error('Failed to reveal wines:', err);
+      await loadData().catch(() => {});
+      alert("Failed to reveal wines. Ensure Host Mode is enabled in Settings and try again.");
     } finally {
+      revealingRef.current = false;
       setLoading(false);
     }
   };
@@ -697,7 +830,9 @@ export default function App() {
                 voterName={voterName}
                 isHost={isHost}
                 onAddWine={handleAddWine}
+                onAddWinesBatch={handleAddWinesBatch}
                 onDeleteWine={handleDeleteWine}
+                onUpdateWine={handleUpdateWine}
                 onStartTasting={handleStartTasting}
               />
             )}
@@ -708,6 +843,7 @@ export default function App() {
                 voterName={voterName}
                 votes={votes}
                 onSubmitStandaloneRating={handleSubmitStandaloneRating}
+                onUpdateVoterName={handleUpdateVoterName}
               />
             )}
 

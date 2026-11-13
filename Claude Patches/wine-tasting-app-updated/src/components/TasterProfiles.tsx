@@ -66,12 +66,23 @@ export default function TasterProfiles({ voterName }: TasterProfilesProps) {
 
   useEffect(() => { load(); }, []);
 
-  // All distinct voters across all archived events
+  // All distinct voters across all archived events (deduped case-insensitively)
   const voters = useMemo(() => {
-    const set = new Set<string>();
-    sessions.forEach(s => (s.votes || []).forEach(v => set.add(v.voter_name)));
-    return Array.from(set).sort((a, b) => a.localeCompare(b));
+    const byLower = new Map<string, string>();
+    sessions.forEach(s => (s.votes || []).forEach(v => {
+      const clean = (v.voter_name || '').trim();
+      if (!clean) return;
+      const key = clean.toLowerCase();
+      if (!byLower.has(key)) byLower.set(key, clean);
+    }));
+    return Array.from(byLower.values()).sort((a, b) => a.localeCompare(b));
   }, [sessions]);
+
+  const canonicalVoterByLower = useMemo(() => {
+    const map = new Map<string, string>();
+    voters.forEach(v => map.set(v.toLowerCase(), v));
+    return map;
+  }, [voters]);
 
   // Default the selection to the current user if they're in the data
   useEffect(() => {
@@ -97,7 +108,7 @@ export default function TasterProfiles({ voterName }: TasterProfilesProps) {
       const varietalCounts: Record<string, number> = {};
 
       for (const s of sessions) {
-        const votes = (s.votes || []).filter(v => v.voter_name.toLowerCase() === voter.toLowerCase());
+        const votes = (s.votes || []).filter(v => (v.voter_name || '').toLowerCase() === voter.toLowerCase());
         if (votes.length === 0) continue;
         eventsSet.add(s.id);
 
@@ -108,29 +119,64 @@ export default function TasterProfiles({ voterName }: TasterProfilesProps) {
         // accumulate per-wine preference for signature-wine detection
         const prefByLabel: Record<string, { sum: number; n: number }> = {};
 
-        for (const v of votes) {
-          const pref = preferredLabel(v);
-          if (pref !== null) {
-            decisions++;
-            const other = pref === v.wine_1_label ? v.wine_2_label : v.wine_1_label;
-            const pw = byLabel[pref];
-            const ow = byLabel[other];
-            if (pw && ow && typeof pw.price === 'number' && typeof ow.price === 'number' && pw.price !== ow.price) {
-              comparable++;
-              if (pw.price < ow.price) cheaper++;
-            }
-            if (pw && typeof pw.price === 'number') { priceSum += pw.price; priceCount++; }
-            if (pw?.style) styleCounts[pw.style] = (styleCounts[pw.style] || 0) + 1;
-            if (pw?.region) regionCounts[pw.region] = (regionCounts[pw.region] || 0) + 1;
-            if (pw?.varietal) varietalCounts[pw.varietal] = (varietalCounts[pw.varietal] || 0) + 1;
-          }
+        const standaloneVotesForSession: typeof votes = [];
 
-          // preference value toward each side (for signature wines)
-          for (const label of [v.wine_1_label, v.wine_2_label]) {
-            const val = label === v.wine_1_label ? (100 - v.slider_value) : v.slider_value;
+        for (const v of votes) {
+          const isStandalone = v.match_id?.startsWith('STANDALONE_') || v.wine_1_label === v.wine_2_label;
+          if (isStandalone) {
+            standaloneVotesForSession.push(v);
+            decisions++;
+            const pw = byLabel[v.wine_1_label];
+            if (pw && v.slider_value >= 65) {
+              if (typeof pw.price === 'number') { priceSum += pw.price; priceCount++; }
+              if (pw.style) styleCounts[pw.style] = (styleCounts[pw.style] || 0) + 1;
+              if (pw.region) regionCounts[pw.region] = (regionCounts[pw.region] || 0) + 1;
+              if (pw.varietal) varietalCounts[pw.varietal] = (varietalCounts[pw.varietal] || 0) + 1;
+            }
+            const label = v.wine_1_label;
             if (!prefByLabel[label]) prefByLabel[label] = { sum: 0, n: 0 };
-            prefByLabel[label].sum += val;
+            prefByLabel[label].sum += v.slider_value;
             prefByLabel[label].n += 1;
+          } else {
+            const pref = preferredLabel(v);
+            if (pref !== null) {
+              decisions++;
+              const other = pref === v.wine_1_label ? v.wine_2_label : v.wine_1_label;
+              const pw = byLabel[pref];
+              const ow = byLabel[other];
+              if (pw && ow && typeof pw.price === 'number' && typeof ow.price === 'number' && pw.price !== ow.price) {
+                comparable++;
+                if (pw.price < ow.price) cheaper++;
+              }
+              if (pw && typeof pw.price === 'number') { priceSum += pw.price; priceCount++; }
+              if (pw?.style) styleCounts[pw.style] = (styleCounts[pw.style] || 0) + 1;
+              if (pw?.region) regionCounts[pw.region] = (regionCounts[pw.region] || 0) + 1;
+              if (pw?.varietal) varietalCounts[pw.varietal] = (varietalCounts[pw.varietal] || 0) + 1;
+            }
+
+            // preference value toward each side (for signature wines)
+            for (const label of [v.wine_1_label, v.wine_2_label]) {
+              const val = label === v.wine_1_label ? (100 - v.slider_value) : v.slider_value;
+              if (!prefByLabel[label]) prefByLabel[label] = { sum: 0, n: 0 };
+              prefByLabel[label].sum += val;
+              prefByLabel[label].n += 1;
+            }
+          }
+        }
+
+        // Pairwise cheaper-preference comparison for standalone ratings in this session
+        for (let i = 0; i < standaloneVotesForSession.length; i++) {
+          for (let j = i + 1; j < standaloneVotesForSession.length; j++) {
+            const v1 = standaloneVotesForSession[i];
+            const v2 = standaloneVotesForSession[j];
+            if (Math.abs(v1.slider_value - v2.slider_value) < 5) continue;
+            const w1 = byLabel[v1.wine_1_label];
+            const w2 = byLabel[v2.wine_1_label];
+            if (!w1 || !w2 || typeof w1.price !== 'number' || typeof w2.price !== 'number' || w1.price === w2.price) continue;
+            comparable++;
+            const higher = v1.slider_value > v2.slider_value ? w1 : w2;
+            const lower = higher === w1 ? w2 : w1;
+            if (higher.price < lower.price) cheaper++;
           }
         }
 
@@ -173,11 +219,20 @@ export default function TasterProfiles({ voterName }: TasterProfilesProps) {
 
     for (const s of sessions) {
       const byMatch: Record<string, { voter: string; pref: string }[]> = {};
+      const standaloneByWine: Record<string, { voter: string; score: number }[]> = {};
+
       for (const v of (s.votes || [])) {
-        const pref = preferredLabel(v);
-        if (pref === null) continue;
-        (byMatch[v.match_id] ||= []).push({ voter: v.voter_name, pref });
+        const canonicalVoter = canonicalVoterByLower.get((v.voter_name || '').trim().toLowerCase()) || v.voter_name;
+        const isStandalone = v.match_id?.startsWith('STANDALONE_') || v.wine_1_label === v.wine_2_label;
+        if (isStandalone) {
+          (standaloneByWine[v.wine_1_label] ||= []).push({ voter: canonicalVoter, score: v.slider_value });
+        } else {
+          const pref = preferredLabel(v);
+          if (pref === null) continue;
+          (byMatch[v.match_id] ||= []).push({ voter: canonicalVoter, pref });
+        }
       }
+
       Object.values(byMatch).forEach(entries => {
         const tally: Record<string, number> = {};
         entries.forEach(e => { tally[e.pref] = (tally[e.pref] || 0) + 1; });
@@ -195,6 +250,17 @@ export default function TasterProfiles({ voterName }: TasterProfilesProps) {
           if (e.pref !== majorityLabel) c.broke++;
         });
       });
+
+      Object.values(standaloneByWine).forEach(entries => {
+        if (entries.length < 2) return;
+        const mean = entries.reduce((sum, e) => sum + e.score, 0) / entries.length;
+        entries.forEach(e => {
+          const c = contrarian[e.voter];
+          if (!c) return;
+          c.total++;
+          if (Math.abs(e.score - mean) >= 15) c.broke++;
+        });
+      });
     }
     voters.forEach(v => {
       const c = contrarian[v];
@@ -202,7 +268,7 @@ export default function TasterProfiles({ voterName }: TasterProfilesProps) {
     });
 
     return result;
-  }, [sessions, voters]);
+  }, [sessions, voters, canonicalVoterByLower]);
 
   // Agreement of the selected voter with every other voter
   const agreements = useMemo(() => {
@@ -213,16 +279,27 @@ export default function TasterProfiles({ voterName }: TasterProfilesProps) {
       let same = 0;
       let shared = 0;
       for (const s of sessions) {
-        const mine = (s.votes || []).filter(v => v.voter_name === selected);
-        const theirs = (s.votes || []).filter(v => v.voter_name === other);
+        const mine = (s.votes || []).filter(v => (v.voter_name || '').toLowerCase() === selected.toLowerCase());
+        const theirs = (s.votes || []).filter(v => (v.voter_name || '').toLowerCase() === other.toLowerCase());
         for (const a of mine) {
-          const b = theirs.find(t => t.match_id === a.match_id);
+          const isAStandalone = a.match_id?.startsWith('STANDALONE_') || a.wine_1_label === a.wine_2_label;
+          const b = theirs.find(t =>
+            t.match_id === a.match_id ||
+            (isAStandalone && (t.match_id?.startsWith('STANDALONE_') || t.wine_1_label === t.wine_2_label) && a.wine_1_label && t.wine_1_label === a.wine_1_label)
+          );
           if (!b) continue;
-          const pa = preferredLabel(a);
-          const pb = preferredLabel(b);
-          if (pa === null || pb === null) continue;
-          shared++;
-          if (pa === pb) same++;
+
+          if (isAStandalone) {
+            const diff = Math.abs(a.slider_value - b.slider_value);
+            shared++;
+            if (diff <= 20) same++;
+          } else {
+            const pa = preferredLabel(a);
+            const pb = preferredLabel(b);
+            if (pa === null || pb === null) continue;
+            shared++;
+            if (pa === pb) same++;
+          }
         }
       }
       if (shared > 0) out.push({ other, share: same / shared, shared });
@@ -296,7 +373,7 @@ export default function TasterProfiles({ voterName }: TasterProfilesProps) {
                 <div className="glass-panel rounded-2xl p-4 space-y-1">
                   <p className="text-[10px] uppercase tracking-widest text-slate-500 font-bold">Events</p>
                   <p className="text-2xl font-black font-serif text-slate-100">{profile.events}</p>
-                  <p className="text-[11px] text-slate-500">{profile.decisions} head-to-heads judged</p>
+                  <p className="text-[11px] text-slate-500">{profile.signatureWines.length} wines rated</p>
                 </div>
 
                 <div className="glass-panel rounded-2xl p-4 space-y-1">
@@ -407,8 +484,8 @@ export default function TasterProfiles({ voterName }: TasterProfilesProps) {
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                       {ally && (
                         <div className="rounded-xl border border-emerald-900/40 bg-emerald-950/20 p-3">
-                          <p className="text-[10px] uppercase tracking-widest text-emerald-400 font-bold flex items-center gap-1.5">
-                            <Handshake className="w-3.5 h-3.5" /> Palate twin
+                          <p className="text-[10px] uppercase tracking-widest text-emerald-400 font-bold flex items-center gap-1.5 flex-wrap">
+                            <Handshake className="w-3.5 h-3.5 shrink-0" /> Taste bud <span className="text-emerald-500 font-normal lowercase tracking-normal">(AKA Palate Twin)</span>
                           </p>
                           <p className="text-sm font-semibold text-slate-200 mt-1">{ally.other}</p>
                           <p className="text-[11px] text-slate-500">{pct(ally.share)} agreement over {ally.shared} shared calls</p>
@@ -416,8 +493,8 @@ export default function TasterProfiles({ voterName }: TasterProfilesProps) {
                       )}
                       {rival && rival.other !== ally?.other && (
                         <div className="rounded-xl border border-rose-900/40 bg-rose-950/20 p-3">
-                          <p className="text-[10px] uppercase tracking-widest text-rose-400 font-bold flex items-center gap-1.5">
-                            <Swords className="w-3.5 h-3.5" /> Opposite palate
+                          <p className="text-[10px] uppercase tracking-widest text-rose-400 font-bold flex items-center gap-1.5 flex-wrap">
+                            <Swords className="w-3.5 h-3.5 shrink-0" /> Flavor foil <span className="text-rose-500 font-normal lowercase tracking-normal">(AKA Opposite Palate)</span>
                           </p>
                           <p className="text-sm font-semibold text-slate-200 mt-1">{rival.other}</p>
                           <p className="text-[11px] text-slate-500">{pct(rival.share)} agreement over {rival.shared} shared calls</p>

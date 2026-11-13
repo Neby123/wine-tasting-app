@@ -130,10 +130,15 @@ export default function Dashboard({
           });
         }
 
+        const ratingsCount = votes.filter(
+          v => v.wine_1_label === label || v.wine_2_label === label
+        ).length;
+
         return {
           ...w,
           score,
           wins,
+          ratingsCount,
           valueRatio: score / Math.max(1, w.price || 1) // score per dollar
         };
       })
@@ -151,6 +156,9 @@ export default function Dashboard({
             if (winner === label) wins++;
           });
         }
+        const ratingsCount = votes.filter(
+          v => v.wine_1_label === label || v.wine_2_label === label
+        ).length;
 
         return {
           id: `label-${label}`,
@@ -165,9 +173,14 @@ export default function Dashboard({
           revealed: false,
           score,
           wins,
+          ratingsCount,
           valueRatio: 0
         };
       });
+
+  const hasStandaloneVotes = votes.some(v => v.match_id?.startsWith('STANDALONE_') || v.wine_1_label === v.wine_2_label);
+  const hasHeadToHeadVotes = votes.some(v => v.match_id && !v.match_id.startsWith('STANDALONE_') && v.wine_1_label !== v.wine_2_label);
+  const isStandaloneSession = hasStandaloneVotes && !hasHeadToHeadVotes;
 
   // Sort stats by average appreciation score (primary) and head-to-head wins (secondary)
   const leaderboard = [...wineStats].sort((a, b) => {
@@ -185,11 +198,13 @@ export default function Dashboard({
     // 2. People's Choice (Highest average rating)
     const peoplesChoice = [...wineStats].sort((a, b) => b.score - a.score)[0];
 
-    // 3. Best Value (Highest rating-to-price ratio, must have won at least 1 match)
-    const bestValueWines = wineStats.filter(w => w.wins > 0);
-    const bestValue = bestValueWines.length > 0
-      ? [...bestValueWines].sort((a, b) => b.valueRatio - a.valueRatio)[0]
-      : [...wineStats].sort((a, b) => b.valueRatio - a.valueRatio)[0];
+    // 3. Best Value (Highest rating-to-price ratio, preferring winners or >= 50 score in standalone mode)
+    const bestValuePool = wineStats.filter(w => w.wins > 0);
+    const qualifiedPool = bestValuePool.length > 0
+      ? bestValuePool
+      : wineStats.filter(w => w.score >= 50);
+    const finalValuePool = qualifiedPool.length > 0 ? qualifiedPool : wineStats;
+    const bestValue = [...finalValuePool].sort((a, b) => b.valueRatio - a.valueRatio)[0];
 
     // 4. Overpriced (Lowest rating-to-price ratio, filter to expensive ones > $20)
     const expensiveWines = wineStats.filter(w => w.price >= 20);
@@ -435,7 +450,9 @@ export default function Dashboard({
                     </div>
 
                     <div className="flex items-center gap-6 text-xs text-slate-400">
-                      <span>Wins: <strong className="text-slate-200">{wine.wins}</strong></span>
+                      <span>
+                        {isStandaloneSession ? 'Ratings' : 'Wins'}: <strong className="text-slate-200">{isStandaloneSession ? wine.ratingsCount : wine.wins}</strong>
+                      </span>
                       <span>Appreciation: <strong className="text-slate-200">{wine.score}/100</strong></span>
                       {isRevealed && <span className="text-amber-400 font-semibold">${wine.price.toFixed(0)}</span>}
                     </div>
@@ -668,7 +685,7 @@ export default function Dashboard({
                     <th className="py-3 px-4">Wine</th>
                     <th className="py-3 px-4">Contributor</th>
                     <th className="py-3 px-4">Price</th>
-                    <th className="py-3 px-4 text-center">Wins</th>
+                    <th className="py-3 px-4 text-center">{isStandaloneSession ? 'Ratings' : 'Wins'}</th>
                     <th className="py-3 px-4 text-center">Appreciation Score</th>
                     <th className="py-3 px-4">Tasting Notes</th>
                   </tr>
@@ -685,7 +702,7 @@ export default function Dashboard({
                       </td>
                       <td className="py-3 px-4 font-medium text-slate-400">{w.submitted_by}</td>
                       <td className="py-3 px-4 font-mono font-bold text-amber-500">${w.price.toFixed(2)}</td>
-                      <td className="py-3 px-4 text-center font-bold text-slate-200">{w.wins}</td>
+                      <td className="py-3 px-4 text-center font-bold text-slate-200">{isStandaloneSession ? w.ratingsCount : w.wins}</td>
                       <td className="py-3 px-4 text-center font-bold text-wine-300">{w.score}/100</td>
                       <td className="py-3 px-4 text-slate-450 line-clamp-1 max-w-xs">{w.tasting_notes || "N/A"}</td>
                     </tr>

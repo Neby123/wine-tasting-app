@@ -68,6 +68,74 @@ const ensureClient = () => {
   return supabase;
 };
 
+/** Explicit column lists avoid exposing private ownership tokens over PostgREST. */
+const WINE_PUBLIC_COLUMNS = 'id,session_id,submitted_by,name,producer,vintage,price,varietal,region,country,style,tasting_notes,blind_label,revealed,created_at';
+const VOTE_PUBLIC_COLUMNS = 'id,session_id,voter_name,match_id,wine_1_label,wine_2_label,slider_value,notes_wine_1,notes_wine_2,created_at';
+const WISHLIST_PUBLIC_COLUMNS = 'id,voter_name,wine_name,producer,vintage,varietal,region,price,source_session_id,source_history_id,note,created_at';
+
+/**
+ * Serializes optional standalone sensory/value metrics into notes_wine_2 as a
+ * versioned JSON envelope and strips extra client-only fields so PostgREST never
+ * raises PGRST204 if extended columns are absent from the live votes table.
+ * Includes voter_token matching the x-voter-token header so RLS INSERT policies pass.
+ */
+const serializeVoteForDb = (vote: Omit<Vote, 'id'>) => {
+  const isStandalone = vote.match_id?.startsWith('STANDALONE_') || vote.wine_1_label === vote.wine_2_label;
+  let notesWine2: string | null = vote.notes_wine_2 || null;
+
+  if (isStandalone) {
+    const meta: Record<string, unknown> = {};
+    if (vote.perceived_price_1 !== undefined) meta.perceived_price_1 = vote.perceived_price_1;
+    if (vote.buy_again_1 !== undefined) meta.buy_again_1 = vote.buy_again_1;
+    if (vote.acidity_1 !== undefined) meta.acidity_1 = vote.acidity_1;
+    if (vote.body_1 !== undefined) meta.body_1 = vote.body_1;
+    if (vote.sweetness_1 !== undefined) meta.sweetness_1 = vote.sweetness_1;
+    notesWine2 = Object.keys(meta).length > 0 ? JSON.stringify({ __v: 1, ...meta }) : null;
+  }
+
+  return {
+    session_id: vote.session_id,
+    voter_name: (vote.voter_name || '').trim(),
+    match_id: vote.match_id,
+    wine_1_label: vote.wine_1_label,
+    wine_2_label: vote.wine_2_label,
+    slider_value: vote.slider_value,
+    notes_wine_1: vote.notes_wine_1 || null,
+    notes_wine_2: notesWine2,
+    voter_token: getOrGenerateVoterToken()
+  };
+};
+
+/** Hydrates optional sensory/value metrics stored in notes_wine_2 back onto standalone Vote objects. */
+const hydrateVoteFromDb = (row: any): Vote => {
+  const vote: Vote = { ...row };
+  const isStandalone = vote.match_id?.startsWith('STANDALONE_') || vote.wine_1_label === vote.wine_2_label;
+  if (isStandalone && typeof row.notes_wine_2 === 'string' && row.notes_wine_2.trim().startsWith('{')) {
+    try {
+      const meta = JSON.parse(row.notes_wine_2);
+      const hasKnownMeta = meta && typeof meta === 'object' && (
+        meta.__v === 1 ||
+        meta.perceived_price_1 !== undefined ||
+        meta.buy_again_1 !== undefined ||
+        meta.acidity_1 !== undefined ||
+        meta.body_1 !== undefined ||
+        meta.sweetness_1 !== undefined
+      );
+      if (hasKnownMeta) {
+        if (meta.perceived_price_1 !== undefined) vote.perceived_price_1 = meta.perceived_price_1;
+        if (meta.buy_again_1 !== undefined) vote.buy_again_1 = meta.buy_again_1;
+        if (meta.acidity_1 !== undefined) vote.acidity_1 = meta.acidity_1;
+        if (meta.body_1 !== undefined) vote.body_1 = meta.body_1;
+        if (meta.sweetness_1 !== undefined) vote.sweetness_1 = meta.sweetness_1;
+        vote.notes_wine_2 = undefined;
+      }
+    } catch {
+      // Ignore malformed legacy notes_wine_2
+    }
+  }
+  return vote;
+};
+
 export const db = {
   getSessions: async (): Promise<WineSession[]> => {
     const client = ensureClient();
@@ -168,7 +236,7 @@ export const db = {
     const client = ensureClient();
     const { data, error } = await client
       .from('wines')
-      .select('*')
+      .select(WINE_PUBLIC_COLUMNS)
       .eq('session_id', sessionId);
 
     if (error) throw error;
@@ -180,11 +248,24 @@ export const db = {
     const { data, error } = await client
       .from('wines')
       .insert({ ...wine, revealed: false })
-      .select()
+      .select(WINE_PUBLIC_COLUMNS)
       .single();
 
     if (error) throw error;
     return data;
+  },
+
+  addWinesBatch: async (winesToAdd: Omit<Wine, 'id' | 'revealed'>[]): Promise<Wine[]> => {
+    if (winesToAdd.length === 0) return [];
+    const client = ensureClient();
+    const rows = winesToAdd.map(w => ({ ...w, revealed: false }));
+    const { data, error } = await client
+      .from('wines')
+      .insert(rows)
+      .select(WINE_PUBLIC_COLUMNS);
+
+    if (error) throw error;
+    return data || [];
   },
 
   deleteWine: async (wineId: string): Promise<void> => {
@@ -195,6 +276,19 @@ export const db = {
       .eq('id', wineId);
 
     if (error) throw error;
+  },
+
+  updateWine: async (wineId: string, updates: Omit<Partial<Omit<Wine, 'id' | 'session_id'>>, 'vintage'> & { vintage?: string | null }): Promise<Wine> => {
+    const client = ensureClient();
+    const { data, error } = await client
+      .from('wines')
+      .update(updates)
+      .eq('id', wineId)
+      .select(WINE_PUBLIC_COLUMNS)
+      .single();
+
+    if (error) throw error;
+    return data;
   },
 
   mapAndRevealWines: async (sessionId: string, mapping: Record<string, string>): Promise<Wine[]> => {
@@ -221,7 +315,7 @@ export const db = {
     // Fetch all updated wines for this session
     const { data, error } = await client
       .from('wines')
-      .select('*')
+      .select(WINE_PUBLIC_COLUMNS)
       .eq('session_id', sessionId);
 
     if (error) throw error;
@@ -232,33 +326,40 @@ export const db = {
     const client = ensureClient();
     const { data, error } = await client
       .from('votes')
-      .select('*')
+      .select(VOTE_PUBLIC_COLUMNS)
       .eq('session_id', sessionId);
 
     if (error) throw error;
-    return data || [];
+    return (data || []).map(hydrateVoteFromDb);
   },
 
   submitVote: async (vote: Omit<Vote, 'id'>): Promise<Vote> => {
     const client = ensureClient();
-    // Try atomic upsert if unique constraint exists
+    const dbPayload = serializeVoteForDb(vote);
+
+    // Atomic upsert keyed on unique constraint (session_id, voter_name, match_id)
     const { data: upserted, error: upsertErr } = await client
       .from('votes')
-      .upsert(vote, { onConflict: 'session_id,voter_name,match_id' })
-      .select()
-      .maybeSingle();
+      .upsert(dbPayload, { onConflict: 'session_id,voter_name,match_id' })
+      .select(VOTE_PUBLIC_COLUMNS)
+      .single();
 
     if (!upsertErr && upserted) {
-      return upserted;
+      return hydrateVoteFromDb(upserted);
     }
 
-    // Fallback: Check for existing vote to overwrite
+    // Only fall back when the live table lacks the unique constraint (SQLSTATE 42P10)
+    const errCode = (upsertErr as any)?.code;
+    if (upsertErr && errCode !== '42P10') {
+      throw upsertErr;
+    }
+
     const { data: existing, error: existErr } = await client
       .from('votes')
       .select('id')
-      .eq('session_id', vote.session_id)
-      .eq('voter_name', vote.voter_name)
-      .eq('match_id', vote.match_id)
+      .eq('session_id', dbPayload.session_id)
+      .eq('voter_name', dbPayload.voter_name)
+      .eq('match_id', dbPayload.match_id)
       .maybeSingle();
 
     if (existErr) throw existErr;
@@ -266,20 +367,42 @@ export const db = {
     if (existing) {
       const { data, error } = await client
         .from('votes')
-        .update(vote)
+        .update(dbPayload)
         .eq('id', existing.id)
-        .select()
+        .select(VOTE_PUBLIC_COLUMNS)
         .single();
       if (error) throw error;
-      return data;
+      return hydrateVoteFromDb(data);
     } else {
       const { data, error } = await client
         .from('votes')
-        .insert(vote)
-        .select()
+        .insert(dbPayload)
+        .select(VOTE_PUBLIC_COLUMNS)
         .single();
-      if (error) throw error;
-      return data;
+      if (error) {
+        // Retry as update if a concurrent request inserted first (SQLSTATE 23505)
+        if ((error as any)?.code === '23505') {
+          const { data: raced } = await client
+            .from('votes')
+            .select('id')
+            .eq('session_id', dbPayload.session_id)
+            .eq('voter_name', dbPayload.voter_name)
+            .eq('match_id', dbPayload.match_id)
+            .maybeSingle();
+          if (raced) {
+            const { data: updated, error: updateErr } = await client
+              .from('votes')
+              .update(dbPayload)
+              .eq('id', raced.id)
+              .select(VOTE_PUBLIC_COLUMNS)
+              .single();
+            if (updateErr) throw updateErr;
+            return hydrateVoteFromDb(updated);
+          }
+        }
+        throw error;
+      }
+      return hydrateVoteFromDb(data);
     }
   },
 
@@ -375,7 +498,7 @@ export const db = {
       const client = ensureClient();
       let query = client
         .from('wishlist')
-        .select('*')
+        .select(WISHLIST_PUBLIC_COLUMNS)
         .order('created_at', { ascending: false });
 
       if (voterName) {
@@ -398,8 +521,8 @@ export const db = {
     const client = ensureClient();
     const { data, error } = await client
       .from('wishlist')
-      .insert(item)
-      .select()
+      .insert({ ...item, voter_token: getOrGenerateVoterToken() })
+      .select(WISHLIST_PUBLIC_COLUMNS)
       .single();
     if (error) throw error;
     return data as WishlistItem;

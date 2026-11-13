@@ -9,6 +9,38 @@ DROP TABLE IF EXISTS history CASCADE;
 DROP TABLE IF EXISTS wishlist CASCADE;
 DROP TABLE IF EXISTS app_settings CASCADE;
 
+-- Helper functions to safely extract request headers and UUID tokens before table creation
+CREATE OR REPLACE FUNCTION get_request_header(header_name TEXT)
+RETURNS TEXT AS $$
+DECLARE
+  headers_str TEXT;
+BEGIN
+  headers_str := current_setting('request.headers', true);
+  IF headers_str IS NULL OR headers_str = '' THEN
+    RETURN '';
+  END IF;
+  RETURN COALESCE((headers_str::json)->>header_name, '');
+EXCEPTION WHEN OTHERS THEN
+  RETURN '';
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp;
+
+-- Safe UUID parser for RLS policies (never raises 22P02 on missing or malformed header)
+CREATE OR REPLACE FUNCTION safe_header_uuid(header_name TEXT)
+RETURNS UUID AS $$
+DECLARE
+  raw_val TEXT;
+BEGIN
+  raw_val := NULLIF(trim(get_request_header(header_name)), '');
+  IF raw_val IS NULL THEN
+    RETURN NULL;
+  END IF;
+  RETURN raw_val::uuid;
+EXCEPTION WHEN invalid_text_representation OR OTHERS THEN
+  RETURN NULL;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp;
+
 -- Sessions table: tracks individual tasting events (e.g. Day de Rosé, Rumble di Reds)
 CREATE TABLE sessions (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -36,24 +68,12 @@ CREATE TABLE wines (
   image_url TEXT,
   blind_label TEXT, -- 'A', 'B', 'C', ..., 'H'
   revealed BOOLEAN NOT NULL DEFAULT false,
+  owner_token UUID DEFAULT COALESCE(
+    safe_header_uuid('x-voter-token'),
+    gen_random_uuid()
+  ),
   created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now())
 );
-
--- Helper function to safely extract request headers in Supabase
-CREATE OR REPLACE FUNCTION get_request_header(header_name TEXT)
-RETURNS TEXT AS $$
-DECLARE
-  headers_str TEXT;
-BEGIN
-  headers_str := current_setting('request.headers', true);
-  IF headers_str IS NULL OR headers_str = '' THEN
-    RETURN '';
-  END IF;
-  RETURN COALESCE((headers_str::json)->>header_name, '');
-EXCEPTION WHEN OTHERS THEN
-  RETURN '';
-END;
-$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp;
 
 -- Votes table: tracks individual tastings of blind pairings
 CREATE TABLE votes (
@@ -67,9 +87,9 @@ CREATE TABLE votes (
   notes_wine_1 TEXT,
   notes_wine_2 TEXT,
   voter_token UUID NOT NULL DEFAULT COALESCE(
-    NULLIF(get_request_header('x-voter-token'), ''),
-    gen_random_uuid()::text
-  )::uuid,
+    safe_header_uuid('x-voter-token'),
+    gen_random_uuid()
+  ),
   created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()),
   CONSTRAINT votes_session_voter_match_unique UNIQUE (session_id, voter_name, match_id)
 );
@@ -124,23 +144,88 @@ BEGIN
     RETURN false;
   END IF;
   SELECT value INTO actual_code FROM app_settings WHERE key = 'host_passcode';
-  RETURN passed_code = actual_code;
+  RETURN COALESCE(passed_code = actual_code, false);
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp;
 
 GRANT EXECUTE ON FUNCTION get_request_header(TEXT) TO PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION safe_header_uuid(TEXT) TO PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION check_is_host() TO PUBLIC, anon, authenticated;
+
+-- Prevent guests from altering ownership/session/reveal columns on wines
+CREATE OR REPLACE FUNCTION enforce_wine_guest_update_immutability()
+RETURNS TRIGGER AS $$
+BEGIN
+  IF NOT COALESCE(check_is_host(), false) THEN
+    IF NEW.session_id IS DISTINCT FROM OLD.session_id
+      OR NEW.owner_token IS DISTINCT FROM OLD.owner_token
+      OR NEW.submitted_by IS DISTINCT FROM OLD.submitted_by
+      OR NEW.revealed IS DISTINCT FROM OLD.revealed
+      OR NEW.blind_label IS DISTINCT FROM OLD.blind_label THEN
+      RAISE EXCEPTION 'Guests cannot modify protected wine metadata';
+    END IF;
+  END IF;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp;
+
+CREATE TRIGGER trg_enforce_wine_guest_update_immutability
+  BEFORE UPDATE ON wines
+  FOR EACH ROW
+  EXECUTE FUNCTION enforce_wine_guest_update_immutability();
 
 -- RLS Policies for sessions
 CREATE POLICY "Allow public read on sessions" ON sessions FOR SELECT USING (true);
 CREATE POLICY "Allow host write on sessions" ON sessions FOR ALL USING (check_is_host());
 
--- RLS Policies for wines
+-- RLS Policies for wines (restrict guest inserts/edits/deletes to own unrevealed wines in setup)
 CREATE POLICY "Allow public read on wines" ON wines FOR SELECT USING (true);
 CREATE POLICY "Allow guest insert on wines during setup" ON wines FOR INSERT 
 WITH CHECK (
-  EXISTS (
-    SELECT 1 FROM sessions WHERE id = wines.session_id AND status = 'setup'
+  check_is_host()
+  OR (
+    revealed = false
+    AND blind_label IS NULL
+    AND safe_header_uuid('x-voter-token') IS NOT NULL
+    AND owner_token = safe_header_uuid('x-voter-token')
+    AND EXISTS (
+      SELECT 1 FROM sessions WHERE id = wines.session_id AND status = 'setup'
+    )
+  )
+);
+CREATE POLICY "Allow guest update on wines during setup" ON wines FOR UPDATE
+USING (
+  (
+    owner_token IS NOT NULL
+    AND owner_token = safe_header_uuid('x-voter-token')
+    AND revealed = false
+    AND EXISTS (
+      SELECT 1 FROM sessions WHERE id = wines.session_id AND status = 'setup'
+    )
+  )
+  OR check_is_host()
+)
+WITH CHECK (
+  (
+    owner_token IS NOT NULL
+    AND owner_token = safe_header_uuid('x-voter-token')
+    AND revealed = false
+    AND blind_label IS NULL
+    AND EXISTS (
+      SELECT 1 FROM sessions WHERE id = wines.session_id AND status = 'setup'
+    )
+  )
+  OR check_is_host()
+);
+CREATE POLICY "Allow guest delete on wines during setup" ON wines FOR DELETE
+USING (
+  (
+    owner_token IS NOT NULL
+    AND owner_token = safe_header_uuid('x-voter-token')
+    AND revealed = false
+    AND EXISTS (
+      SELECT 1 FROM sessions WHERE id = wines.session_id AND status = 'setup'
+    )
   )
   OR check_is_host()
 );
@@ -150,19 +235,21 @@ CREATE POLICY "Allow host write on wines" ON wines FOR ALL USING (check_is_host(
 CREATE POLICY "Allow public read on votes" ON votes FOR SELECT USING (true);
 CREATE POLICY "Allow authenticated voter insert on votes" ON votes FOR INSERT 
 WITH CHECK (
-  get_request_header('x-voter-token') <> '' 
-  AND voter_token = get_request_header('x-voter-token')::uuid
+  safe_header_uuid('x-voter-token') IS NOT NULL
+  AND voter_token = safe_header_uuid('x-voter-token')
 );
 CREATE POLICY "Allow voter update on votes" ON votes FOR UPDATE 
 USING (
-  voter_token::text = get_request_header('x-voter-token')
+  safe_header_uuid('x-voter-token') IS NOT NULL
+  AND voter_token = safe_header_uuid('x-voter-token')
 )
 WITH CHECK (
-  voter_token::text = get_request_header('x-voter-token')
+  safe_header_uuid('x-voter-token') IS NOT NULL
+  AND voter_token = safe_header_uuid('x-voter-token')
 );
 CREATE POLICY "Allow voter or host delete on votes" ON votes FOR DELETE 
 USING (
-  voter_token::text = get_request_header('x-voter-token')
+  (safe_header_uuid('x-voter-token') IS NOT NULL AND voter_token = safe_header_uuid('x-voter-token'))
   OR check_is_host()
 );
 
@@ -184,9 +271,9 @@ CREATE TABLE wishlist (
   source_history_id TEXT,
   note TEXT,
   voter_token UUID NOT NULL DEFAULT COALESCE(
-    NULLIF(get_request_header('x-voter-token'), ''),
-    gen_random_uuid()::text
-  )::uuid,
+    safe_header_uuid('x-voter-token'),
+    gen_random_uuid()
+  ),
   created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now())
 );
 
@@ -195,17 +282,27 @@ ALTER TABLE wishlist ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "Allow public read on wishlist"   ON wishlist FOR SELECT USING (true);
 CREATE POLICY "Allow owner insert on wishlist"  ON wishlist FOR INSERT 
 WITH CHECK (
-  get_request_header('x-voter-token') <> '' 
-  AND voter_token = get_request_header('x-voter-token')::uuid
+  safe_header_uuid('x-voter-token') IS NOT NULL
+  AND voter_token = safe_header_uuid('x-voter-token')
 );
 CREATE POLICY "Allow owner update on wishlist"  ON wishlist FOR UPDATE
-  USING (voter_token::text = get_request_header('x-voter-token'))
-  WITH CHECK (voter_token::text = get_request_header('x-voter-token'));
+  USING (safe_header_uuid('x-voter-token') IS NOT NULL AND voter_token = safe_header_uuid('x-voter-token'))
+  WITH CHECK (safe_header_uuid('x-voter-token') IS NOT NULL AND voter_token = safe_header_uuid('x-voter-token'));
 CREATE POLICY "Allow owner delete on wishlist"  ON wishlist FOR DELETE
   USING (
-    voter_token::text = get_request_header('x-voter-token')
+    (safe_header_uuid('x-voter-token') IS NOT NULL AND voter_token = safe_header_uuid('x-voter-token'))
     OR check_is_host()
   );
+
+-- Column-level SELECT hardening so bearer tokens cannot be harvested via REST API
+REVOKE SELECT ON TABLE wines FROM anon, authenticated;
+GRANT SELECT (id, session_id, submitted_by, name, producer, vintage, price, varietal, region, country, style, tasting_notes, image_url, blind_label, revealed, created_at) ON TABLE wines TO anon, authenticated;
+
+REVOKE SELECT ON TABLE votes FROM anon, authenticated;
+GRANT SELECT (id, session_id, voter_name, match_id, wine_1_label, wine_2_label, slider_value, notes_wine_1, notes_wine_2, created_at) ON TABLE votes TO anon, authenticated;
+
+REVOKE SELECT ON TABLE wishlist FROM anon, authenticated;
+GRANT SELECT (id, voter_name, wine_name, producer, vintage, varietal, region, price, source_session_id, source_history_id, note, created_at) ON TABLE wishlist TO anon, authenticated;
 
 -- Enable Realtime subscriptions on all active tables
 -- (If publication supabase_realtime doesn't exist, we fallback)

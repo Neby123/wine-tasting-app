@@ -1,14 +1,16 @@
 import React, { useState } from 'react';
-import { Wine } from '../utils/mockData';
+import { Wine, SATURDAY_GRIGIO_LINEUP } from '../utils/mockData';
 import { db } from '../utils/supabase';
-import { Plus, Trash2, EyeOff, User, DollarSign, Wine as WineIcon, Sparkles, Loader2 } from 'lucide-react';
+import { Plus, Trash2, EyeOff, User, DollarSign, Wine as WineIcon, Sparkles, Loader2, Edit2, Check, X, PackagePlus } from 'lucide-react';
 
 interface IntakeFormProps {
   wines: Wine[];
   voterName: string;
   isHost: boolean;
   onAddWine: (wine: Omit<Wine, 'id' | 'session_id' | 'revealed'>) => Promise<void>;
+  onAddWinesBatch?: (wines: Omit<Wine, 'id' | 'session_id' | 'revealed'>[]) => Promise<void>;
   onDeleteWine: (id: string) => Promise<void>;
+  onUpdateWine?: (id: string, updates: Omit<Partial<Omit<Wine, 'id' | 'session_id'>>, 'vintage'> & { vintage?: string | null }) => Promise<void>;
   onStartTasting: () => Promise<void>;
 }
 
@@ -29,7 +31,9 @@ export default function IntakeForm({
   voterName,
   isHost,
   onAddWine,
+  onAddWinesBatch,
   onDeleteWine,
+  onUpdateWine,
   onStartTasting
 }: IntakeFormProps) {
   const [submittedBy, setSubmittedBy] = useState(voterName || '');
@@ -54,6 +58,95 @@ export default function IntakeForm({
   const [enriching, setEnriching] = useState(false);
   const [enrichMsg, setEnrichMsg] = useState('');
   const [priceIsEstimate, setPriceIsEstimate] = useState(false);
+  const [bulkLoading, setBulkLoading] = useState(false);
+  const [lineupContributor, setLineupContributor] = useState('Ben & Monica');
+  const [editingWineId, setEditingWineId] = useState<string | null>(null);
+  const [editName, setEditName] = useState('');
+  const [editSubmittedBy, setEditSubmittedBy] = useState('');
+  const [editVintage, setEditVintage] = useState('');
+  const [editPrice, setEditPrice] = useState('');
+  const [savingEdit, setSavingEdit] = useState(false);
+  const bulkLoadingRef = React.useRef(false);
+
+  const handleFillFromLineup = (bottle: typeof SATURDAY_GRIGIO_LINEUP[number]) => {
+    setWineName(bottle.name);
+    setProducer(bottle.producer || '');
+    setVintage(bottle.vintage || '');
+    setPrice(String(bottle.price));
+    setVarietal(bottle.varietal || '');
+    setRegion(bottle.region || '');
+    setCountry(bottle.country || '');
+    setStyle(bottle.style || '');
+    setNotes(bottle.tasting_notes || '');
+    setPriceIsEstimate(false);
+    setErrorMsg('');
+    setEnrichMsg(`Loaded "${bottle.name}" into form — confirm contributor & price, then click Register Wine.`);
+  };
+
+  const handleLoadAllLineup = async () => {
+    if (bulkLoadingRef.current) return;
+    const existingNames = new Set(wines.map(w => w.name.trim().toLowerCase()));
+    const missing = SATURDAY_GRIGIO_LINEUP.filter(b => !existingNames.has(b.name.trim().toLowerCase()));
+    if (missing.length === 0) return;
+
+    bulkLoadingRef.current = true;
+    setBulkLoading(true);
+    setErrorMsg('');
+    try {
+      const payload = missing.map(bottle => ({
+        ...bottle,
+        submitted_by: lineupContributor.trim() || voterName || bottle.submitted_by
+      }));
+      if (onAddWinesBatch) {
+        await onAddWinesBatch(payload);
+      } else {
+        for (const item of payload) {
+          await onAddWine(item);
+        }
+      }
+    } catch (err: any) {
+      setErrorMsg(err?.message || 'Failed to load lineup bottles.');
+    } finally {
+      bulkLoadingRef.current = false;
+      setBulkLoading(false);
+    }
+  };
+
+  const startEditingWine = (wine: Wine) => {
+    setEditingWineId(wine.id);
+    setEditName(wine.name);
+    setEditSubmittedBy(wine.submitted_by);
+    setEditVintage(wine.vintage || '');
+    setEditPrice(String(wine.price));
+  };
+
+  const cancelEditingWine = () => {
+    setEditingWineId(null);
+  };
+
+  const saveEditedWine = async (wineId: string) => {
+    if (!onUpdateWine) return;
+    const parsedPrice = parseFloat(editPrice);
+    if (!editName.trim() || !editSubmittedBy.trim() || isNaN(parsedPrice) || parsedPrice < 0) {
+      setErrorMsg('Please enter a valid wine name, contributor, and price.');
+      return;
+    }
+    setSavingEdit(true);
+    setErrorMsg('');
+    try {
+      await onUpdateWine(wineId, {
+        name: editName.trim(),
+        ...(isHost ? { submitted_by: editSubmittedBy.trim() } : {}),
+        vintage: editVintage.trim() || null,
+        price: parsedPrice
+      });
+      setEditingWineId(null);
+    } catch {
+      setErrorMsg('Failed to update bottle details.');
+    } finally {
+      setSavingEdit(false);
+    }
+  };
 
   const handleAutofill = async () => {
     if (!wineName.trim()) {
@@ -371,8 +464,81 @@ export default function IntakeForm({
           </div>
         </div>
 
-        {/* Right Side: Logged Wines List */}
+        {/* Right Side: Saturday Lineup Preset + Logged Wines List */}
         <div className="lg:col-span-3 space-y-6">
+          {isHost && (
+            <div className="glass-panel rounded-2xl p-5 border border-amber-800/30 bg-amber-950/10 space-y-4">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-800/80 pb-3">
+                <div>
+                  <h3 className="text-base font-bold text-amber-300 flex items-center gap-2 font-serif">
+                    <PackagePlus className="w-4 h-4 text-amber-400" />
+                    Saturday 11/14 Pinot Grigio Lineup ({SATURDAY_GRIGIO_LINEUP.length} Bottles)
+                  </h3>
+                  <p className="text-[11px] text-slate-400">
+                    Pre-loaded from your bottle photos. Edit prices or contributor couples inline below after loading.
+                  </p>
+                </div>
+
+                <div className="flex items-center gap-2 shrink-0">
+                  <select
+                    value={lineupContributor}
+                    onChange={(e) => setLineupContributor(e.target.value)}
+                    className="px-2.5 py-1.5 bg-slate-950 border border-slate-800 rounded-lg text-xs text-slate-200 focus:outline-none focus:border-amber-500"
+                    title="Default contributor when bulk-loading"
+                  >
+                    {['Ben & Monica', 'Jack & Alexcia', 'David & Abby'].map(c => (
+                      <option key={c} value={c}>{c}</option>
+                    ))}
+                  </select>
+                  <button
+                    type="button"
+                    onClick={handleLoadAllLineup}
+                    disabled={bulkLoading || !voterName || SATURDAY_GRIGIO_LINEUP.every(b => wines.some(w => w.name.trim().toLowerCase() === b.name.trim().toLowerCase()))}
+                    className="py-1.5 px-3 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 disabled:from-slate-800 disabled:to-slate-900 disabled:text-slate-500 text-slate-950 font-bold rounded-lg text-xs transition-all whitespace-nowrap"
+                  >
+                    {bulkLoading ? 'Loading…' : 'Load All 6 Bottles'}
+                  </button>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                {SATURDAY_GRIGIO_LINEUP.map((bottle) => {
+                  const alreadyAdded = wines.some(w => w.name.trim().toLowerCase() === bottle.name.trim().toLowerCase());
+                  return (
+                    <div
+                      key={bottle.name}
+                      className={`p-2.5 rounded-xl border text-xs flex items-center justify-between gap-2 ${
+                        alreadyAdded
+                          ? 'bg-emerald-950/15 border-emerald-900/40 text-slate-400'
+                          : 'bg-slate-950/60 border-slate-800/80 text-slate-200'
+                      }`}
+                    >
+                      <div className="min-w-0">
+                        <p className="font-semibold truncate">{bottle.name}</p>
+                        <p className="text-[10px] text-slate-500 truncate">
+                          {bottle.vintage} · {bottle.region} · <span className="text-amber-400">${bottle.price.toFixed(2)}</span>
+                        </p>
+                      </div>
+                      {alreadyAdded ? (
+                        <span className="text-[10px] font-bold text-emerald-400 bg-emerald-950/40 border border-emerald-800/40 px-2 py-0.5 rounded-full shrink-0">
+                          ✓ Added
+                        </span>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => handleFillFromLineup(bottle)}
+                          className="text-[10px] font-semibold px-2.5 py-1 rounded-lg bg-slate-900 hover:bg-wine-900/50 border border-slate-700 hover:border-wine-600 text-slate-200 shrink-0 transition-colors"
+                        >
+                          Fill Form
+                        </button>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
           <div className="glass-panel rounded-2xl p-6 space-y-4">
             <div className="flex justify-between items-center border-b border-slate-800 pb-3">
               <h3 className="text-lg font-semibold text-slate-200 flex items-center gap-2">
@@ -396,56 +562,132 @@ export default function IntakeForm({
                 {wines.map((wine) => {
                   const isOwnWine = wine.submitted_by.toLowerCase() === voterName.toLowerCase();
                   const showDetails = isHost || isOwnWine;
+                  const isEditing = editingWineId === wine.id;
 
                   return (
-                    <div key={wine.id} className="py-3 flex justify-between items-center group">
-                      <div className="space-y-1">
-                        {showDetails ? (
-                          <>
-                            <div className="flex items-center gap-2">
-                              <span className="font-semibold text-slate-200">{wine.name}</span>
-                              {wine.vintage && <span className="text-xs bg-slate-800 px-2 py-0.5 rounded text-slate-400">{wine.vintage}</span>}
-                            </div>
-                            <div className="text-xs text-slate-400 flex flex-wrap items-center gap-x-3 gap-y-1">
-                              <span>By: <strong className="text-slate-300">{wine.submitted_by}</strong></span>
-                              <span>•</span>
-                              <span className="text-amber-400 font-medium">${wine.price.toFixed(2)}</span>
-                              {wine.varietal && (
-                                <>
-                                  <span>•</span>
-                                  <span className="text-slate-300">{wine.varietal}</span>
-                                </>
-                              )}
-                              {wine.region && (
-                                <>
-                                  <span>•</span>
-                                  <span>{wine.region}</span>
-                                </>
-                              )}
-                            </div>
-                          </>
-                        ) : (
-                          <>
-                            <div className="flex items-center gap-2 text-slate-400">
-                              <EyeOff className="w-4 h-4 text-slate-500" />
-                              <span className="italic text-slate-500">Hidden Blind Selection</span>
-                            </div>
-                            <div className="text-xs text-slate-400">
-                              Logged by: <strong className="text-slate-300">{wine.submitted_by}</strong>
-                            </div>
-                          </>
-                        )}
-                      </div>
+                    <div key={wine.id} className="py-3 flex justify-between items-center gap-3 group">
+                      {isEditing && showDetails ? (
+                        <div className="flex-1 grid grid-cols-1 sm:grid-cols-4 gap-2 items-center">
+                          <input
+                            type="text"
+                            value={editName}
+                            onChange={(e) => setEditName(e.target.value)}
+                            placeholder="Wine name"
+                            className="sm:col-span-2 px-2.5 py-1.5 bg-slate-950 border border-slate-700 rounded-lg text-xs text-slate-200 focus:outline-none focus:border-wine-500"
+                          />
+                          <input
+                            type="text"
+                            value={editSubmittedBy}
+                            onChange={(e) => setEditSubmittedBy(e.target.value)}
+                            disabled={!isHost}
+                            placeholder="Brought by"
+                            className="px-2.5 py-1.5 bg-slate-950 border border-slate-700 disabled:opacity-50 rounded-lg text-xs text-slate-200 focus:outline-none focus:border-wine-500"
+                          />
+                          <div className="flex items-center gap-1.5">
+                            <input
+                              type="text"
+                              value={editVintage}
+                              onChange={(e) => setEditVintage(e.target.value)}
+                              placeholder="Year"
+                              className="w-14 px-2 py-1.5 bg-slate-950 border border-slate-700 rounded-lg text-xs text-slate-200 focus:outline-none focus:border-wine-500"
+                            />
+                            <input
+                              type="number"
+                              step="0.01"
+                              min="0"
+                              value={editPrice}
+                              onChange={(e) => setEditPrice(e.target.value)}
+                              placeholder="Price"
+                              className="w-20 px-2 py-1.5 bg-slate-950 border border-slate-700 rounded-lg text-xs text-slate-200 focus:outline-none focus:border-wine-500"
+                            />
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="space-y-1 min-w-0">
+                          {showDetails ? (
+                            <>
+                              <div className="flex items-center gap-2">
+                                <span className="font-semibold text-slate-200">{wine.name}</span>
+                                {wine.vintage && <span className="text-xs bg-slate-800 px-2 py-0.5 rounded text-slate-400">{wine.vintage}</span>}
+                              </div>
+                              <div className="text-xs text-slate-400 flex flex-wrap items-center gap-x-3 gap-y-1">
+                                <span>By: <strong className="text-slate-300">{wine.submitted_by}</strong></span>
+                                <span>•</span>
+                                <span className="text-amber-400 font-medium">${wine.price.toFixed(2)}</span>
+                                {wine.varietal && (
+                                  <>
+                                    <span>•</span>
+                                    <span className="text-slate-300">{wine.varietal}</span>
+                                  </>
+                                )}
+                                {wine.region && (
+                                  <>
+                                    <span>•</span>
+                                    <span>{wine.region}</span>
+                                  </>
+                                )}
+                              </div>
+                            </>
+                          ) : (
+                            <>
+                              <div className="flex items-center gap-2 text-slate-400">
+                                <EyeOff className="w-4 h-4 text-slate-500" />
+                                <span className="italic text-slate-500">Hidden Blind Selection</span>
+                              </div>
+                              <div className="text-xs text-slate-400">
+                                Logged by: <strong className="text-slate-300">{wine.submitted_by}</strong>
+                              </div>
+                            </>
+                          )}
+                        </div>
+                      )}
 
-                      {/* Delete actions (Host can delete anyone's, user can delete their own) */}
+                      {/* Edit & Delete actions (Host or wine owner) */}
                       {(isHost || isOwnWine) && (
-                        <button
-                          onClick={() => onDeleteWine(wine.id)}
-                          className="p-1.5 text-slate-500 hover:text-rose-400 hover:bg-rose-950/20 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity focus:opacity-100"
-                          title="Delete wine"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
+                        <div className="flex items-center gap-1 shrink-0">
+                          {isEditing ? (
+                            <>
+                              <button
+                                type="button"
+                                disabled={savingEdit}
+                                onClick={() => saveEditedWine(wine.id)}
+                                className="p-1.5 text-emerald-400 hover:bg-emerald-950/30 rounded-lg transition-colors"
+                                title="Save changes"
+                              >
+                                <Check className="w-4 h-4" />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={cancelEditingWine}
+                                className="p-1.5 text-slate-400 hover:text-slate-200 hover:bg-slate-800 rounded-lg transition-colors"
+                                title="Cancel edit"
+                              >
+                                <X className="w-4 h-4" />
+                              </button>
+                            </>
+                          ) : (
+                            <>
+                              {onUpdateWine && showDetails && (
+                                <button
+                                  type="button"
+                                  onClick={() => startEditingWine(wine)}
+                                  className="p-1.5 text-slate-500 hover:text-amber-300 hover:bg-amber-950/20 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity focus:opacity-100"
+                                  title="Edit bottle details"
+                                >
+                                  <Edit2 className="w-4 h-4" />
+                                </button>
+                              )}
+                              <button
+                                type="button"
+                                onClick={() => onDeleteWine(wine.id)}
+                                className="p-1.5 text-slate-500 hover:text-rose-400 hover:bg-rose-950/20 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity focus:opacity-100"
+                                title="Delete wine"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            </>
+                          )}
+                        </div>
                       )}
                     </div>
                   );
@@ -467,7 +709,7 @@ export default function IntakeForm({
                   </div>
                   <button
                     onClick={onStartTasting}
-                    disabled={wines.length < 1}
+                    disabled={wines.length < 1 || bulkLoading || isSubmitting || savingEdit}
                     className="py-2.5 px-6 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 disabled:from-slate-800 disabled:to-slate-900 disabled:text-slate-500 text-slate-950 font-bold rounded-xl text-sm transition-all flex items-center justify-center gap-2 shadow-lg shadow-amber-950/20 whitespace-nowrap"
                   >
                     Start Tasting Session

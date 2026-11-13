@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { HistoricalTasting } from '../utils/mockData';
+import { HistoricalTasting, HISTORICAL_SESSIONS } from '../utils/mockData';
 import { db } from '../utils/supabase';
 import { Trophy, Calendar, DollarSign, Award, ChevronDown, ChevronUp, RefreshCw } from 'lucide-react';
 
@@ -18,9 +18,10 @@ export default function History({ voterName, onRefresh }: HistoryProps) {
     setLoading(true);
     try {
       const data = await db.getHistory();
-      setSessions(data);
+      setSessions(data && data.length > 0 ? data : HISTORICAL_SESSIONS);
     } catch (err) {
       console.error("Error loading history:", err);
+      setSessions(HISTORICAL_SESSIONS);
     } finally {
       setLoading(false);
     }
@@ -48,16 +49,18 @@ export default function History({ voterName, onRefresh }: HistoryProps) {
     if (votes.length === 0) return null;
     
     return votes.map(v => {
+      const isStandalone = v.match_id?.startsWith('STANDALONE_') || v.wine_1_label === v.wine_2_label;
       const isWine1 = v.wine_1_label === label;
-      const preferenceVal = isWine1 ? (100 - v.slider_value) : v.slider_value;
+      const preferenceVal = isStandalone ? v.slider_value : (isWine1 ? (100 - v.slider_value) : v.slider_value);
       const notes = isWine1 ? v.notes_wine_1 : v.notes_wine_2;
-      const opponent = isWine1 ? v.wine_2_label : v.wine_1_label;
+      const opponent = isStandalone ? undefined : (isWine1 ? v.wine_2_label : v.wine_1_label);
       
       return {
-        matchId: v.match_id,
+        matchId: isStandalone ? 'Standalone Rating' : v.match_id,
         opponent,
         notes: notes?.trim(),
-        score: preferenceVal
+        score: preferenceVal,
+        isStandalone
       };
     });
   };
@@ -93,12 +96,89 @@ export default function History({ voterName, onRefresh }: HistoryProps) {
           {sessions.map((session) => {
           const isExpanded = expandedSessionId === session.id;
           
+          const sessionWines = session.wines || [];
+          const sessionVotes = session.votes || [];
+
+          // Calculate wins and rating counts for each wine
+          const winesWithStats = sessionWines.map(w => {
+            let wins = w.wins || 0;
+            if (wins === 0 && sessionVotes.length > 0) {
+              sessionVotes.forEach(v => {
+                if (v.match_id?.startsWith('STANDALONE_') || v.wine_1_label === v.wine_2_label) return;
+                if (v.wine_1_label === w.blind_label && v.slider_value < 50) wins++;
+                if (v.wine_2_label === w.blind_label && v.slider_value > 50) wins++;
+              });
+            }
+            const ratingsCount = sessionVotes.filter(
+              v => v.wine_1_label === w.blind_label || v.wine_2_label === w.blind_label
+            ).length;
+            return { ...w, wins, ratingsCount };
+          });
+
+          const hasStandaloneVotes = sessionVotes.some(v => v.match_id?.startsWith('STANDALONE_') || v.wine_1_label === v.wine_2_label);
+          const hasHeadToHeadVotes = sessionVotes.some(v => v.match_id && !v.match_id.startsWith('STANDALONE_') && v.wine_1_label !== v.wine_2_label);
+          const isStandaloneArchive = hasStandaloneVotes && !hasHeadToHeadVotes;
+
           // Sort participating wines for this session
-          const sortedWines = [...session.wines].sort((a, b) => {
+          const sortedWines = [...winesWithStats].sort((a, b) => {
+            if (isStandaloneArchive) {
+              return b.score - a.score;
+            }
             if (b.wins !== a.wins) return b.wins - a.wins;
             return b.score - a.score;
           });
-          const hasContributors = session.wines.some(w => w.submitted_by && w.submitted_by !== 'Guest');
+          const hasContributors = sessionWines.some(w => w.submitted_by && w.submitted_by !== 'Guest');
+          const topWine = sortedWines[0];
+
+          // Dynamic resolution of winner details if saved as Unknown or N/A
+          const displayWinner = (session.winnerName && session.winnerName !== 'Unknown') 
+            ? session.winnerName 
+            : (topWine ? topWine.name : 'Unknown');
+          const displayBroughtBy = (session.winnerBroughtBy && session.winnerBroughtBy !== 'Unknown') 
+            ? session.winnerBroughtBy 
+            : (topWine ? topWine.submitted_by : '');
+          const displayGroupWinner = (session.groupWinner && session.groupWinner !== 'N/A' && !session.groupWinner.includes('Unknown'))
+            ? session.groupWinner
+            : (topWine ? `${topWine.name} ($${Number(topWine.price ?? 0).toFixed(2)})` : 'N/A');
+
+          // Compute Giant Killer match if missing or fallback
+          let displayGiantKiller = session.giantKiller;
+          if (!displayGiantKiller || displayGiantKiller === 'No giant killer matches logged') {
+            if (sessionVotes.length > 0) {
+              let maxMargin = 0;
+              sessionVotes.forEach(v => {
+                if (v.match_id?.startsWith('STANDALONE_') || v.wine_1_label === v.wine_2_label) return;
+                const w1 = sessionWines.find(w => w.blind_label === v.wine_1_label);
+                const w2 = sessionWines.find(w => w.blind_label === v.wine_2_label);
+                if (w1 && w2 && typeof w1.price === 'number' && typeof w2.price === 'number') {
+                  if (v.slider_value < 50 && w1.price < w2.price) {
+                    const margin = w2.price - w1.price;
+                    if (margin > maxMargin) {
+                      maxMargin = margin;
+                      displayGiantKiller = `${w1.name} ($${w1.price.toFixed(2)}) beat ${w2.name} ($${w2.price.toFixed(2)})`;
+                    }
+                  } else if (v.slider_value > 50 && w2.price < w1.price) {
+                    const margin = w1.price - w2.price;
+                    if (margin > maxMargin) {
+                      maxMargin = margin;
+                      displayGiantKiller = `${w2.name} ($${w2.price.toFixed(2)}) beat ${w1.name} ($${w1.price.toFixed(2)})`;
+                    }
+                  }
+                }
+              });
+            }
+
+            if (!displayGiantKiller && sessionWines.length >= 2) {
+              const pricedWines = [...sessionWines].filter(w => typeof w.price === 'number' && w.price > 0).sort((a, b) => a.price - b.price);
+              if (pricedWines.length >= 2) {
+                const cheapest = pricedWines[0];
+                const pricierOutperformed = pricedWines.slice(1).find(w => w.price > cheapest.price && cheapest.score > w.score);
+                if (pricierOutperformed) {
+                  displayGiantKiller = `${cheapest.name} ($${cheapest.price.toFixed(2)}) beat ${pricierOutperformed.name} ($${pricierOutperformed.price.toFixed(2)})`;
+                }
+              }
+            }
+          }
 
           return (
             <div 
@@ -129,11 +209,11 @@ export default function History({ voterName, onRefresh }: HistoryProps) {
                       <Trophy className="w-3 h-3" /> Winner
                     </p>
                     <p className="text-sm font-semibold text-slate-250 leading-tight">
-                      {session.winnerName}
+                      {displayWinner}
                     </p>
-                    {session.winnerBroughtBy && session.winnerBroughtBy !== 'Guest' && (
+                    {displayBroughtBy && displayBroughtBy !== 'Guest' && (
                       <p className="text-xs text-slate-500">
-                        Brought by: {session.winnerBroughtBy}
+                        Brought by: {displayBroughtBy}
                       </p>
                     )}
                   </div>
@@ -155,7 +235,7 @@ export default function History({ voterName, onRefresh }: HistoryProps) {
                       <p className="text-[9px] text-gold-400 font-extrabold uppercase tracking-widest flex items-center gap-1">
                         <Trophy className="w-3 h-3" /> Best in Show
                       </p>
-                      <p className="text-xs font-semibold text-slate-350">{session.groupWinner}</p>
+                      <p className="text-xs font-semibold text-slate-350">{displayGroupWinner}</p>
                     </div>
 
                     <div className="bg-slate-950 border border-slate-900 rounded-xl p-4 space-y-1">
@@ -169,7 +249,7 @@ export default function History({ voterName, onRefresh }: HistoryProps) {
                       <p className="text-[9px] text-purple-400 font-extrabold uppercase tracking-widest flex items-center gap-1">
                         <Award className="w-3 h-3" /> Giant Killer Match
                       </p>
-                      <p className="text-xs font-semibold text-slate-350 line-clamp-1">{session.giantKiller || "No giant killer matches logged"}</p>
+                      <p className="text-xs font-semibold text-slate-350 line-clamp-1">{displayGiantKiller || "No giant killer matches logged"}</p>
                     </div>
                   </div>
 
@@ -181,11 +261,11 @@ export default function History({ voterName, onRefresh }: HistoryProps) {
                         <thead>
                           <tr className="border-b border-slate-900 text-slate-500 font-bold">
                             <th className="py-2.5 px-2">Rank</th>
-                            {session.wines[0]?.blind_label && <th className="py-2.5 px-2 text-center">Label</th>}
+                            {sessionWines[0]?.blind_label && <th className="py-2.5 px-2 text-center">Label</th>}
                             <th className="py-2.5 px-3">Wine Details</th>
                             {hasContributors && <th className="py-2.5 px-3">Contributor</th>}
                             <th className="py-2.5 px-3">Price</th>
-                            <th className="py-2.5 px-3 text-center">Wins</th>
+                            <th className="py-2.5 px-3 text-center">{isStandaloneArchive ? 'Ratings' : 'Wins'}</th>
                             <th className="py-2.5 px-3 text-center">Appreciation Score</th>
                           </tr>
                         </thead>
@@ -200,8 +280,10 @@ export default function History({ voterName, onRefresh }: HistoryProps) {
                               )}
                               <td className="py-2.5 px-3 font-semibold text-slate-200">{wine.name}</td>
                               {hasContributors && <td className="py-2.5 px-3 text-slate-400">{wine.submitted_by}</td>}
-                              <td className="py-2.5 px-3 font-mono font-bold text-amber-500">${wine.price.toFixed(2)}</td>
-                              <td className="py-2.5 px-3 text-center font-bold text-slate-200">{wine.wins}</td>
+                              <td className="py-2.5 px-3 font-mono font-bold text-amber-500">${Number(wine.price ?? 0).toFixed(2)}</td>
+                              <td className="py-2.5 px-3 text-center font-bold text-slate-200">
+                                {isStandaloneArchive ? wine.ratingsCount : wine.wins}
+                              </td>
                               <td className="py-2.5 px-3 text-center font-bold text-wine-300">{wine.score}/100</td>
                             </tr>
                           ))}
@@ -230,7 +312,7 @@ export default function History({ voterName, onRefresh }: HistoryProps) {
                         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                           <div className="space-y-0.5">
                             <h4 className="text-sm font-bold text-wine-200 font-serif">Historical Tasting Journal</h4>
-                            <p className="text-xs text-slate-500">Review individual brackets, ratings, and notes logged during this session.</p>
+                            <p className="text-xs text-slate-500">Review individual ratings, notes, and price-performance metrics logged during this session.</p>
                           </div>
                           
                           {uniqueVoters.length > 0 && (
@@ -251,9 +333,13 @@ export default function History({ voterName, onRefresh }: HistoryProps) {
 
                         {activeVoter ? (
                           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                            {['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'].map((label) => {
-                              const wineDetail = session.wines.find(w => w.blind_label === label);
-                              const evaluations = getPersonalNotesForLabel(label, activeVoter, session.votes);
+                            {(sessionWines.length > 0 && sessionWines.every(w => w.blind_label)
+                              ? sessionWines.map(w => w.blind_label!).sort()
+                              : ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H']
+                            ).map((label) => {
+                              const wineDetail = sessionWines.find(w => w.blind_label === label);
+                              const evaluations = getPersonalNotesForLabel(label, activeVoter, sessionVotes);
+                              const isStandaloneGroup = evaluations && evaluations.every(ev => ev.isStandalone);
                               
                               return (
                                 <div 
@@ -269,7 +355,7 @@ export default function History({ voterName, onRefresh }: HistoryProps) {
                                       </span>
                                       {evaluations && evaluations.length > 0 && (
                                         <span className="text-[9px] bg-slate-950 px-2 py-0.5 border border-slate-850 text-slate-400 rounded-full font-mono font-semibold">
-                                          {evaluations.length} {evaluations.length === 1 ? 'Match' : 'Matches'}
+                                          {evaluations.length} {isStandaloneGroup ? (evaluations.length === 1 ? 'Rating' : 'Ratings') : (evaluations.length === 1 ? 'Match' : 'Matches')}
                                         </span>
                                       )}
                                     </div>
@@ -280,7 +366,7 @@ export default function History({ voterName, onRefresh }: HistoryProps) {
                                       </h5>
                                       {wineDetail && (
                                         <p className="text-[10px] text-slate-500 font-medium">
-                                          ${wineDetail.price.toFixed(2)} • By {wineDetail.submitted_by}
+                                          ${Number(wineDetail.price ?? 0).toFixed(2)} • By {wineDetail.submitted_by}
                                         </p>
                                       )}
                                     </div>
@@ -289,7 +375,7 @@ export default function History({ voterName, onRefresh }: HistoryProps) {
                                       <div className="space-y-1.5 pt-1">
                                         {evaluations.map((ev, eIdx) => {
                                           const isWin = ev.score > 50;
-                                          const opponentWine = session.wines.find(w => w.blind_label === ev.opponent);
+                                          const opponentWine = sessionWines.find(w => w.blind_label === ev.opponent);
                                           const opponentName = opponentWine ? opponentWine.name : `Wine ${ev.opponent}`;
                                           
                                           const roundNames: Record<string, string> = { 
@@ -308,11 +394,17 @@ export default function History({ voterName, onRefresh }: HistoryProps) {
                                               <div className="flex justify-between items-start gap-2">
                                                 <div className="flex flex-col">
                                                   <span className="text-slate-500 text-[8px] font-extrabold uppercase tracking-widest leading-none mb-0.5">{roundName}</span>
-                                                  <span className="text-slate-300 font-semibold line-clamp-1">vs {opponentName}</span>
+                                                  {ev.opponent && <span className="text-slate-300 font-semibold line-clamp-1">vs {opponentName}</span>}
                                                 </div>
-                                                <span className={`shrink-0 font-bold ${isWin ? 'text-emerald-400' : 'text-slate-500 line-through'}`}>
-                                                  {isWin ? 'Win' : 'Loss'}
-                                                </span>
+                                                {ev.isStandalone ? (
+                                                  <span className="shrink-0 font-bold text-emerald-400 font-mono">
+                                                    {ev.score}/100
+                                                  </span>
+                                                ) : (
+                                                  <span className={`shrink-0 font-bold ${isWin ? 'text-emerald-400' : 'text-slate-500 line-through'}`}>
+                                                    {isWin ? 'Win' : 'Loss'}
+                                                  </span>
+                                                )}
                                               </div>
                                               {ev.notes && (
                                                 <p className="text-slate-450 italic mt-0.5 font-sans">
@@ -324,7 +416,7 @@ export default function History({ voterName, onRefresh }: HistoryProps) {
                                         })}
                                       </div>
                                     ) : (
-                                      <p className="text-[10px] text-slate-500 italic">No matches logged.</p>
+                                      <p className="text-[10px] text-slate-500 italic">No ratings logged.</p>
                                     )}
                                   </div>
                                 </div>
