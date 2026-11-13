@@ -242,12 +242,12 @@ export default function Cellar({ voterName }: CellarProps) {
   };
 
   const inputClass =
-    "w-full px-3 py-2 bg-slate-950 border border-slate-800 focus:border-wine-500 rounded-lg text-slate-200 text-sm focus:outline-none focus:ring-1 focus:ring-wine-500";
+    "w-full px-3 py-2 bg-white border border-slate-800 focus:border-[#6E172C] rounded-lg text-slate-100 text-sm focus:outline-none focus:ring-1 focus:ring-[#6E172C] placeholder:text-slate-500 shadow-xs";
 
   if (loading) {
     return (
       <div className="flex flex-col items-center justify-center py-32 space-y-4">
-        <RefreshCw className="w-8 h-8 text-wine-500 animate-spin" />
+        <RefreshCw className="w-8 h-8 text-[#6E172C] animate-spin" />
         <p className="text-sm text-slate-500 font-medium">Opening the cellar…</p>
       </div>
     );
@@ -255,10 +255,10 @@ export default function Cellar({ voterName }: CellarProps) {
 
   return (
     <div className="space-y-8 animate-fade-in pb-12">
-      <div className="flex justify-between items-center border-b border-slate-900 pb-4">
+      <div className="flex justify-between items-center border-b border-slate-800 pb-4">
         <div className="space-y-1">
           <h2 className="text-3xl font-bold font-serif text-wine-100 flex items-center gap-2">
-            <Star className="w-7 h-7 text-gold-400" /> My Cellar
+            <Star className="w-7 h-7 text-amber-700" /> My Cellar
           </h2>
           <p className="text-slate-400 text-sm">
             Your buy-again list, plus every wine you've ever tasted — searchable.
@@ -266,7 +266,7 @@ export default function Cellar({ voterName }: CellarProps) {
         </div>
         <button
           onClick={load}
-          className="p-2 rounded-lg border border-slate-800 text-slate-400 hover:text-slate-200 hover:border-wine-800 transition-colors"
+          className="p-2 rounded-lg border border-slate-800 bg-white text-slate-400 hover:text-slate-100 hover:border-[#6E172C] transition-colors shadow-xs"
           title="Refresh"
         >
           <RefreshCw className="w-4 h-4" />
@@ -274,8 +274,8 @@ export default function Cellar({ voterName }: CellarProps) {
       </div>
 
       {!voterName && (
-        <div className="bg-amber-950/20 border border-amber-900/30 rounded-xl p-4 flex items-start gap-2.5 text-sm text-amber-300">
-          <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-amber-400" />
+        <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 flex items-start gap-2.5 text-sm text-amber-900 shadow-xs">
+          <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-amber-700" />
           <p>Set your name in Settings to keep a personal wishlist. You can still search the archive below.</p>
         </div>
       )}
@@ -283,9 +283,9 @@ export default function Cellar({ voterName }: CellarProps) {
       <div className="grid grid-cols-1 lg:grid-cols-5 gap-8">
         {/* Wishlist */}
         <div className="lg:col-span-2 space-y-6">
-          <div className="glass-panel rounded-2xl p-6 space-y-4">
-            <h3 className="text-lg font-semibold text-gold-300 flex items-center gap-2">
-              <Star className="w-5 h-5" /> Buy-again list {wishlist.length > 0 && <span className="text-slate-500 text-sm font-normal">({wishlist.length})</span>}
+          <div className="glass-panel rounded-2xl p-6 space-y-4 bg-white border border-slate-800 shadow-xs">
+            <h3 className="text-lg font-semibold text-slate-100 font-serif flex items-center gap-2">
+              <Star className="w-5 h-5 text-amber-700" /> Buy-again list {wishlist.length > 0 && <span className="text-slate-500 text-sm font-normal">({wishlist.length})</span>}
             </h3>
 
             {wishlist.length === 0 ? (
@@ -293,11 +293,11 @@ export default function Cellar({ voterName }: CellarProps) {
                 Nothing saved yet. Search the archive and tap the bookmark, or add one below.
               </p>
             ) : (
-              <div className="divide-y divide-slate-800/60 max-h-[360px] overflow-y-auto pr-1">
+              <div className="divide-y divide-slate-800 max-h-[360px] overflow-y-auto pr-1">
                 {wishlist.map(w => (
                   <div key={w.id} className="py-3 flex justify-between items-start group gap-2">
                     <div className="min-w-0">
-                      <p className="text-sm font-semibold text-slate-200 truncate">{w.wine_name}</p>
+                      <p className="text-sm font-semibold text-slate-100 truncate">{w.wine_name}</p>
                       <p className="text-[11px] text-slate-500 truncate">
                         {[w.producer, w.varietal, w.region].filter(Boolean).join(' · ')}
                         {typeof w.price === 'number' ? ` · $${w.price.toFixed(2)}` : ''}
@@ -306,7 +306,7 @@ export default function Cellar({ voterName }: CellarProps) {
                     </div>
                     <button
                       onClick={() => remove(w.id)}
-                      className="p-1.5 text-slate-500 hover:text-rose-400 hover:bg-rose-950/20 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity focus:opacity-100 shrink-0"
+                      className="p-1.5 text-slate-400 hover:text-rose-700 hover:bg-rose-50 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity focus:opacity-100 shrink-0"
                       title="Remove"
                     >
                       <Trash2 className="w-4 h-4" />
@@ -318,7 +318,7 @@ export default function Cellar({ voterName }: CellarProps) {
 
             {voterName && (
               <div className="border-t border-slate-800 pt-4 space-y-2">
-                <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">Add manually</p>
+                <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">Add manually</p>
                 <input className={inputClass} placeholder="Wine name" value={mName} onChange={e => setMName(e.target.value)} />
                 <div className="grid grid-cols-2 gap-2">
                   <input className={inputClass} placeholder="Producer" value={mProducer} onChange={e => setMProducer(e.target.value)} />
@@ -328,7 +328,7 @@ export default function Cellar({ voterName }: CellarProps) {
                 <button
                   onClick={addManual}
                   disabled={!mName.trim() || busy}
-                  className="w-full py-2 px-4 bg-gradient-to-r from-wine-800 to-wine-600 hover:from-wine-700 hover:to-wine-500 disabled:from-slate-800 disabled:to-slate-900 disabled:text-slate-500 text-white font-semibold rounded-lg text-sm transition-all flex items-center justify-center gap-2"
+                  className="w-full py-2 px-4 bg-[#6E172C] hover:bg-[#5A1425] disabled:bg-slate-800 disabled:text-slate-500 text-white font-semibold rounded-lg text-sm transition-all flex items-center justify-center gap-2 shadow-xs"
                 >
                   <Plus className="w-4 h-4" /> Add to list
                 </button>
@@ -339,13 +339,13 @@ export default function Cellar({ voterName }: CellarProps) {
 
         {/* Archive search */}
         <div className="lg:col-span-3 space-y-6">
-          <div className="glass-panel rounded-2xl p-6 space-y-4">
-            <h3 className="text-lg font-semibold text-slate-200 flex items-center gap-2">
-              <Search className="w-5 h-5 text-wine-400" /> Search past wines
+          <div className="glass-panel rounded-2xl p-6 space-y-4 bg-white border border-slate-800 shadow-xs">
+            <h3 className="text-lg font-semibold text-slate-100 font-serif flex items-center gap-2">
+              <Search className="w-5 h-5 text-[#6E172C]" /> Search past wines
             </h3>
 
             <div className="relative">
-              <span className="absolute inset-y-0 left-0 pl-3 flex items-center text-slate-500">
+              <span className="absolute inset-y-0 left-0 pl-3 flex items-center text-slate-400">
                 <Search className="w-4 h-4" />
               </span>
               <input
@@ -353,7 +353,7 @@ export default function Cellar({ voterName }: CellarProps) {
                 placeholder="Search by name, grape, region, style, or event…"
                 value={query}
                 onChange={e => setQuery(e.target.value)}
-                className="w-full pl-9 pr-3 py-2 bg-slate-950 border border-slate-800 focus:border-wine-500 rounded-lg text-slate-200 text-sm focus:outline-none focus:ring-1 focus:ring-wine-500"
+                className="w-full pl-9 pr-3 py-2 bg-white border border-slate-800 focus:border-[#6E172C] rounded-lg text-slate-100 text-sm focus:outline-none focus:ring-1 focus:ring-[#6E172C] placeholder:text-slate-500 shadow-xs"
               />
             </div>
 
@@ -367,30 +367,30 @@ export default function Cellar({ voterName }: CellarProps) {
                 <p className="text-sm">No matches.</p>
               </div>
             ) : (
-              <div className="divide-y divide-slate-800/60 max-h-[440px] overflow-y-auto pr-1">
+              <div className="divide-y divide-slate-800 max-h-[440px] overflow-y-auto pr-1">
                 {results.map(r => {
                   const saved = wishlistNames.has(r.name.toLowerCase());
                   return (
                     <div key={r.key} className="py-3 flex items-center justify-between gap-3">
                       <div className="min-w-0">
-                        <p className="text-sm font-semibold text-slate-200 truncate">{r.name}</p>
+                        <p className="text-sm font-semibold text-slate-100 truncate">{r.name}</p>
                         <p className="text-[11px] text-slate-500 flex flex-wrap items-center gap-x-2 gap-y-0.5">
                           <span className="text-slate-400">{r.event}</span>
-                          {typeof r.price === 'number' && <span className="text-amber-400">${r.price.toFixed(2)}</span>}
-                          {r.varietal && <span className="inline-flex items-center gap-1"><Grape className="w-3 h-3" />{r.varietal}</span>}
-                          {r.region && <span className="inline-flex items-center gap-1"><MapPin className="w-3 h-3" />{r.region}</span>}
+                          {typeof r.price === 'number' && <span className="text-amber-800 font-bold font-mono">${r.price.toFixed(2)}</span>}
+                          {r.varietal && <span className="inline-flex items-center gap-1"><Grape className="w-3 h-3 text-amber-700" />{r.varietal}</span>}
+                          {r.region && <span className="inline-flex items-center gap-1"><MapPin className="w-3 h-3 text-emerald-700" />{r.region}</span>}
                         </p>
                       </div>
                       <div className="flex items-center gap-2 shrink-0">
-                        <span className="text-xs font-black text-wine-300 w-12 text-right">{r.score}/100</span>
+                        <span className="text-xs font-black text-[#6E172C] w-12 text-right font-mono">{r.score}/100</span>
                         {voterName && (
                           <button
                             onClick={() => addFromSearch(r)}
                             disabled={saved || busy}
                             className={`p-1.5 rounded-lg transition-colors ${
                               saved
-                                ? 'text-emerald-400'
-                                : 'text-slate-500 hover:text-gold-300 hover:bg-slate-800'
+                                ? 'text-emerald-800 bg-emerald-50 border border-emerald-200'
+                                : 'text-slate-400 hover:text-amber-800 hover:bg-amber-50'
                             }`}
                             title={saved ? 'On your list' : 'Add to buy-again list'}
                           >

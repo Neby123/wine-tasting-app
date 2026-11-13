@@ -268,10 +268,10 @@ export default function Dashboard({
   return (
     <div className="space-y-8 animate-fade-in pb-12">
       {/* Session Title Header */}
-      <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4 bg-slate-900/40 border border-slate-800 rounded-2xl p-6">
+      <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4 bg-white border border-slate-800 rounded-2xl p-6 shadow-sm">
         <div className="space-y-1">
           <div className="flex items-center gap-2">
-            <span className="text-xs bg-wine-900 text-wine-300 font-bold uppercase tracking-wider px-2.5 py-0.5 rounded-full">
+            <span className="text-xs bg-wine-950 text-[#6E172C] border border-wine-800/80 font-bold uppercase tracking-wider px-2.5 py-0.5 rounded-full">
               {session.status === 'setup' ? 'Setup Mode' : session.status === 'tasting' ? 'Tasting In Progress' : 'Completed'}
             </span>
             <span className="text-slate-500 font-mono text-xs">{session.date}</span>
@@ -281,11 +281,10 @@ export default function Dashboard({
 
         {/* Global actions */}
         <div className="flex gap-3">
-
           {isHost && (
             <button
               onClick={onResetSession}
-              className="py-2 px-4 border border-slate-850 hover:bg-slate-900 text-slate-400 hover:text-slate-200 rounded-lg text-xs transition-all flex items-center gap-1.5"
+              className="py-2 px-4 border border-slate-800 bg-white hover:bg-slate-850 text-slate-400 hover:text-slate-100 rounded-lg text-xs transition-all flex items-center gap-1.5 shadow-xs"
             >
               <RefreshCw className="w-3.5 h-3.5" /> Reset Session
             </button>
@@ -295,31 +294,31 @@ export default function Dashboard({
 
       {/* Grand Champion Banner */}
       {isRevealed && awards && awards.bestInShow && (
-        <div className="glass-panel border-2 border-gold-500/50 bg-gradient-to-r from-amber-950/40 via-gold-950/30 to-wine-950/40 rounded-2xl p-6 text-center space-y-3 shadow-2xl shadow-gold-950/30 animate-scale-in">
-          <div className="inline-flex items-center gap-2 bg-gold-500/20 border border-gold-400/40 px-3.5 py-1 rounded-full text-gold-300 text-xs font-extrabold uppercase tracking-widest">
-            <Trophy className="w-4 h-4 text-gold-400 animate-bounce" /> {session.name} Champion (Best in Show)
+        <div className="glass-panel border-2 border-amber-300 bg-gradient-to-r from-amber-50 via-gold-950/70 to-rose-50/50 rounded-2xl p-6 text-center space-y-3 shadow-lg shadow-amber-900/5 animate-scale-in">
+          <div className="inline-flex items-center gap-2 bg-amber-100/90 border border-amber-300 px-3.5 py-1 rounded-full text-amber-900 text-xs font-extrabold uppercase tracking-widest">
+            <Trophy className="w-4 h-4 text-amber-700 animate-bounce" /> {session.name} Champion (Best in Show)
           </div>
           <h3 className="text-3xl sm:text-4xl font-bold font-serif text-slate-100">
             {awards.bestInShow.name}
           </h3>
-          <div className="flex flex-wrap justify-center items-center gap-4 text-sm text-slate-300">
-            <span>Brought by: <strong className="text-amber-300 font-bold">{awards.bestInShow.submitted_by}</strong></span>
+          <div className="flex flex-wrap justify-center items-center gap-4 text-sm text-slate-400">
+            <span>Brought by: <strong className="text-amber-900 font-bold">{awards.bestInShow.submitted_by}</strong></span>
             <span>•</span>
-            <span>Price: <strong className="text-emerald-400 font-bold">${awards.bestInShow.price}</strong></span>
+            <span>Price: <strong className="text-emerald-800 font-bold">${awards.bestInShow.price}</strong></span>
             <span>•</span>
-            <span>Appreciation Score: <strong className="text-wine-300 font-bold">{awards.bestInShow.score} / 100</strong></span>
+            <span>Appreciation Score: <strong className="text-[#6E172C] font-bold">{awards.bestInShow.score} / 100</strong></span>
           </div>
         </div>
       )}
 
       {/* Tabs */}
-      <div className="flex border-b border-slate-850">
+      <div className="flex border-b border-slate-800">
         <button
           onClick={() => setActiveTab('status')}
           className={`pb-3 px-6 text-sm font-semibold tracking-wide border-b-2 transition-all flex items-center gap-2 ${
             activeTab === 'status' 
-              ? 'border-wine-500 text-wine-200' 
-              : 'border-transparent text-slate-500 hover:text-slate-300'
+              ? 'border-[#6E172C] text-[#6E172C]' 
+              : 'border-transparent text-slate-500 hover:text-slate-100'
           }`}
         >
           <Users className="w-4 h-4" /> Live Tasting Status
@@ -329,8 +328,8 @@ export default function Dashboard({
             onClick={() => setActiveTab('analysis')}
             className={`pb-3 px-6 text-sm font-semibold tracking-wide border-b-2 transition-all flex items-center gap-2 ${
               activeTab === 'analysis' 
-                ? 'border-wine-500 text-wine-200' 
-                : 'border-transparent text-slate-500 hover:text-slate-300'
+                ? 'border-[#6E172C] text-[#6E172C]' 
+                : 'border-transparent text-slate-500 hover:text-slate-100'
             }`}
           >
             <BarChart2 className="w-4 h-4" /> Value Analysis & Awards
@@ -352,7 +351,7 @@ export default function Dashboard({
                   <div className="border-b border-slate-850 pb-3 flex items-center justify-between">
                     <div>
                       <h3 className="text-xl font-bold font-serif text-slate-100 flex items-center gap-2">
-                        <Eye className="w-5.5 h-5.5 text-wine-400" />
+                        <Eye className="w-5.5 h-5.5 text-[#6E172C]" />
                         Unbag & Reveal Bottles
                       </h3>
                       <p className="text-xs text-slate-500 mt-1">
@@ -364,15 +363,15 @@ export default function Dashboard({
                   <form onSubmit={handleConfirmReveal} className="space-y-6">
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                       {bagLabels.map((label) => (
-                        <div key={label} className="flex items-center gap-3 bg-slate-950/60 p-3 border border-slate-850 rounded-xl">
-                          <span className="w-8 h-8 rounded-full bg-wine-800 text-white font-black font-serif flex items-center justify-center">
+                        <div key={label} className="flex items-center gap-3 bg-slate-850/60 p-3 border border-slate-800 rounded-xl">
+                          <span className="w-8 h-8 rounded-full bg-[#6E172C] text-white font-black font-serif flex items-center justify-center text-sm shadow-xs">
                             {label}
                           </span>
                           <div className="flex-1">
                             <select
                               value={mapping[label] || ''}
                               onChange={(e) => setMapping(prev => ({ ...prev, [label]: e.target.value }))}
-                              className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs text-slate-200 focus:outline-none focus:border-wine-500"
+                              className="w-full bg-white border border-slate-800 rounded-lg p-2 text-xs text-slate-100 focus:outline-none focus:border-[#6E172C] shadow-xs"
                             >
                               <option value="">-- Mapped Wine --</option>
                               {wines.map(w => {
@@ -390,7 +389,7 @@ export default function Dashboard({
                     </div>
 
                     {hasDuplicates && (
-                      <p className="text-rose-400 text-xs border border-rose-950/30 bg-rose-950/15 px-3 py-2 rounded-lg">
+                      <p className="text-rose-800 text-xs border border-rose-200 bg-rose-50 px-3 py-2 rounded-lg font-medium">
                         Error: You have assigned the same wine to multiple bags. Please ensure each wine is assigned uniquely.
                       </p>
                     )}
@@ -399,7 +398,7 @@ export default function Dashboard({
                       <button
                         type="submit"
                         disabled={!canSubmitReveal}
-                        className="py-3 px-8 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 disabled:from-slate-800 disabled:to-slate-900 disabled:text-slate-500 text-slate-950 font-bold rounded-xl text-sm transition-all flex items-center justify-center gap-2 shadow-lg shadow-amber-950/20"
+                        className="py-3 px-8 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 disabled:from-slate-800 disabled:to-slate-850 disabled:text-slate-500 text-[#1E1814] font-bold rounded-xl text-sm transition-all flex items-center justify-center gap-2 shadow-lg shadow-amber-900/10"
                       >
                         <Eye className="w-4 h-4" /> Save Reveal & Map Results
                       </button>
@@ -408,9 +407,9 @@ export default function Dashboard({
                 </div>
               ) : (
                 <div className="glass-panel rounded-2xl p-8 text-center space-y-4">
-                  <Trophy className="w-16 h-16 text-gold-400 mx-auto drop-shadow-[0_0_15px_rgba(212,175,55,0.3)] animate-pulse" />
+                  <Trophy className="w-16 h-16 text-amber-600 mx-auto drop-shadow-sm animate-pulse" />
                   <div className="space-y-1">
-                    <h3 className="text-2xl font-bold font-serif text-slate-200">Tasting In Progress!</h3>
+                    <h3 className="text-2xl font-bold font-serif text-slate-100">Tasting In Progress!</h3>
                     <p className="text-sm text-slate-400 max-w-sm mx-auto">
                       Fill in your 0–100 ratings on the Tasting Sheet tab. When everyone finishes, the Host will unbag and reveal the wines!
                     </p>
@@ -419,9 +418,9 @@ export default function Dashboard({
               )
             ) : (
               <div className="glass-panel rounded-2xl p-8 text-center space-y-4">
-                <Trophy className="w-16 h-16 text-gold-400 mx-auto drop-shadow-[0_0_15px_rgba(212,175,55,0.3)]" />
+                <Trophy className="w-16 h-16 text-amber-600 mx-auto drop-shadow-sm" />
                 <div className="space-y-1">
-                  <h3 className="text-2xl font-bold font-serif text-slate-200">Tasting Completed & Revealed</h3>
+                  <h3 className="text-2xl font-bold font-serif text-slate-100">Tasting Completed & Revealed</h3>
                   <p className="text-sm text-slate-400 max-w-sm mx-auto">
                     All bottles have been unbagged and mapped. Check the <strong>Value Analysis & Awards</strong> tab above for trophies and price breakdowns!
                   </p>
@@ -431,30 +430,30 @@ export default function Dashboard({
 
             {/* Sub-results Leaderboard */}
             <div className="glass-panel rounded-2xl p-6 space-y-4">
-              <h3 className="text-lg font-semibold text-slate-200 flex items-center gap-2 border-b border-slate-850 pb-3">
-                <Trophy className="w-5 h-5 text-gold-400" />
+              <h3 className="text-lg font-semibold text-slate-100 flex items-center gap-2 border-b border-slate-850 pb-3">
+                <Trophy className="w-5 h-5 text-amber-600" />
                 Current Standings
               </h3>
               
-              <div className="divide-y divide-slate-850/60 max-h-[300px] overflow-y-auto pr-2">
+              <div className="divide-y divide-slate-800 max-h-[300px] overflow-y-auto pr-2">
                 {leaderboard.map((wine, idx) => (
                   <div key={wine.id} className="py-2.5 flex justify-between items-center text-sm">
                     <div className="flex items-center gap-3">
                       <span className="font-mono text-slate-500 font-bold w-4">#{idx+1}</span>
-                      <span className="w-6 h-6 rounded-full bg-slate-950 border border-slate-800 flex items-center justify-center text-[10px] font-black text-slate-300">
+                      <span className="w-6 h-6 rounded-full bg-slate-850 border border-slate-800 flex items-center justify-center text-[10px] font-black text-slate-100">
                         {wine.blind_label}
                       </span>
-                      <span className="font-medium text-slate-300">
+                      <span className="font-medium text-slate-100">
                         {isRevealed ? wine.name : `Wine ${wine.blind_label}`}
                       </span>
                     </div>
 
                     <div className="flex items-center gap-6 text-xs text-slate-400">
                       <span>
-                        {isStandaloneSession ? 'Ratings' : 'Wins'}: <strong className="text-slate-200">{isStandaloneSession ? wine.ratingsCount : wine.wins}</strong>
+                        {isStandaloneSession ? 'Ratings' : 'Wins'}: <strong className="text-slate-100">{isStandaloneSession ? wine.ratingsCount : wine.wins}</strong>
                       </span>
-                      <span>Appreciation: <strong className="text-slate-200">{wine.score}/100</strong></span>
-                      {isRevealed && <span className="text-amber-400 font-semibold">${wine.price.toFixed(0)}</span>}
+                      <span>Appreciation: <strong className="text-slate-100">{wine.score}/100</strong></span>
+                      {isRevealed && <span className="text-amber-800 font-semibold font-mono">${wine.price.toFixed(0)}</span>}
                     </div>
                   </div>
                 ))}
@@ -465,8 +464,8 @@ export default function Dashboard({
           {/* Column 3: Voter Check-in Card */}
           <div className="space-y-6">
             <div className="glass-panel rounded-2xl p-6 space-y-4">
-              <h3 className="text-lg font-semibold text-slate-200 flex items-center gap-2 border-b border-slate-850 pb-3">
-                <Users className="w-5 h-5 text-blue-400" />
+              <h3 className="text-lg font-semibold text-slate-100 flex items-center gap-2 border-b border-slate-850 pb-3">
+                <Users className="w-5 h-5 text-[#6E172C]" />
                 Voters Room
               </h3>
               
@@ -479,18 +478,18 @@ export default function Dashboard({
                     const expectedVotes = wines.length > 0 ? wines.length : 6;
                     const isComplete = votesCount >= expectedVotes;
                     return (
-                      <div key={name} className="flex justify-between items-center text-xs bg-slate-950/40 px-3 py-2 rounded-lg border border-slate-850/40">
-                        <span className="font-semibold text-slate-350">{name}</span>
+                      <div key={name} className="flex justify-between items-center text-xs bg-slate-850/50 px-3 py-2 rounded-lg border border-slate-800">
+                        <span className="font-semibold text-slate-100">{name}</span>
                         {isComplete ? (
-                          <span className="text-emerald-400 bg-emerald-950/30 px-2.5 py-0.5 rounded-full border border-emerald-900/30 font-bold flex items-center gap-1">
+                          <span className="text-emerald-800 bg-emerald-50 px-2.5 py-0.5 rounded-full border border-emerald-200 font-bold flex items-center gap-1">
                             ✓ Complete ({votesCount}/{expectedVotes})
                           </span>
                         ) : votesCount > 0 ? (
-                          <span className="text-amber-400 bg-amber-950/30 px-2.5 py-0.5 rounded-full border border-amber-900/30 font-bold">
+                          <span className="text-amber-800 bg-amber-50 px-2.5 py-0.5 rounded-full border border-amber-200 font-bold">
                             In Progress ({votesCount}/{expectedVotes})
                           </span>
                         ) : (
-                          <span className="text-slate-500 bg-slate-900 px-2.5 py-0.5 rounded-full">
+                          <span className="text-slate-500 bg-white border border-slate-800 px-2.5 py-0.5 rounded-full">
                             Not Started (0/{expectedVotes})
                           </span>
                         )}
@@ -515,65 +514,65 @@ export default function Dashboard({
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
             {/* Award 1: Best in Show */}
             {awards.bestInShow && (
-              <div className="glass-panel border-gold-600/30 bg-gradient-to-b from-gold-950/10 to-slate-950/40 rounded-2xl p-5 text-center relative overflow-hidden flex flex-col justify-between min-h-[180px]">
-                <div className="absolute top-0 right-0 w-16 h-16 bg-gold-400/5 rounded-bl-full blur-sm" />
+              <div className="glass-panel border-2 border-amber-300 bg-gradient-to-b from-amber-50 via-gold-950/60 to-white rounded-2xl p-5 text-center relative overflow-hidden flex flex-col justify-between min-h-[180px] shadow-sm">
+                <div className="absolute top-0 right-0 w-16 h-16 bg-amber-400/10 rounded-bl-full blur-sm" />
                 <div className="space-y-2">
-                  <Trophy className="w-8 h-8 text-gold-400 mx-auto" />
-                  <p className="text-[10px] text-gold-300 font-extrabold uppercase tracking-widest">Grand Champion (Best in Show)</p>
+                  <Trophy className="w-8 h-8 text-amber-700 mx-auto" />
+                  <p className="text-[10px] text-amber-900 font-extrabold uppercase tracking-widest">Grand Champion (Best in Show)</p>
                   <h4 className="text-base font-bold text-slate-100 font-serif leading-tight line-clamp-2">{awards.bestInShow.name}</h4>
                 </div>
-                <div className="text-xs text-slate-400 mt-3 pt-2 border-t border-slate-850 flex justify-between items-center">
-                  <span>By: <strong>{awards.bestInShow.submitted_by}</strong></span>
-                  <span className="text-amber-400 font-semibold">${awards.bestInShow.price}</span>
+                <div className="text-xs text-slate-500 mt-3 pt-2 border-t border-amber-200 flex justify-between items-center">
+                  <span>By: <strong className="text-slate-100">{awards.bestInShow.submitted_by}</strong></span>
+                  <span className="text-amber-900 font-bold font-mono">${awards.bestInShow.price}</span>
                 </div>
               </div>
             )}
 
             {/* Award 2: People's Choice */}
             {awards.peoplesChoice && (
-              <div className="glass-panel border-wine-800/30 bg-gradient-to-b from-wine-950/10 to-slate-950/40 rounded-2xl p-5 text-center relative overflow-hidden flex flex-col justify-between min-h-[180px]">
-                <div className="absolute top-0 right-0 w-16 h-16 bg-wine-500/5 rounded-bl-full blur-sm" />
+              <div className="glass-panel border-2 border-rose-200 bg-gradient-to-b from-rose-50 via-wine-950/60 to-white rounded-2xl p-5 text-center relative overflow-hidden flex flex-col justify-between min-h-[180px] shadow-sm">
+                <div className="absolute top-0 right-0 w-16 h-16 bg-rose-400/10 rounded-bl-full blur-sm" />
                 <div className="space-y-2">
-                  <Award className="w-8 h-8 text-rose-400 mx-auto" />
-                  <p className="text-[10px] text-rose-400 font-extrabold uppercase tracking-widest">Highest Rated ({awards.peoplesChoice.score}/100)</p>
+                  <Award className="w-8 h-8 text-rose-700 mx-auto" />
+                  <p className="text-[10px] text-rose-800 font-extrabold uppercase tracking-widest">Highest Rated ({awards.peoplesChoice.score}/100)</p>
                   <h4 className="text-base font-bold text-slate-100 font-serif leading-tight line-clamp-2">{awards.peoplesChoice.name}</h4>
                 </div>
-                <div className="text-xs text-slate-400 mt-3 pt-2 border-t border-slate-850 flex justify-between items-center">
-                  <span>By: <strong>{awards.peoplesChoice.submitted_by}</strong></span>
-                  <span className="text-amber-400 font-semibold">${awards.peoplesChoice.price}</span>
+                <div className="text-xs text-slate-500 mt-3 pt-2 border-t border-rose-200 flex justify-between items-center">
+                  <span>By: <strong className="text-slate-100">{awards.peoplesChoice.submitted_by}</strong></span>
+                  <span className="text-amber-900 font-bold font-mono">${awards.peoplesChoice.price}</span>
                 </div>
               </div>
             )}
 
             {/* Award 3: Best Value */}
             {awards.bestValue && (
-              <div className="glass-panel border-emerald-800/30 bg-gradient-to-b from-emerald-950/10 to-slate-950/40 rounded-2xl p-5 text-center relative overflow-hidden flex flex-col justify-between min-h-[180px]">
-                <div className="absolute top-0 right-0 w-16 h-16 bg-emerald-500/5 rounded-bl-full blur-sm" />
+              <div className="glass-panel border-2 border-emerald-200 bg-gradient-to-b from-emerald-50 via-emerald-50/40 to-white rounded-2xl p-5 text-center relative overflow-hidden flex flex-col justify-between min-h-[180px] shadow-sm">
+                <div className="absolute top-0 right-0 w-16 h-16 bg-emerald-400/10 rounded-bl-full blur-sm" />
                 <div className="space-y-2">
-                  <DollarSign className="w-8 h-8 text-emerald-400 mx-auto" />
-                  <p className="text-[10px] text-emerald-400 font-extrabold uppercase tracking-widest">Best Value (Score/Price)</p>
+                  <DollarSign className="w-8 h-8 text-emerald-700 mx-auto" />
+                  <p className="text-[10px] text-emerald-800 font-extrabold uppercase tracking-widest">Best Value (Score/Price)</p>
                   <h4 className="text-base font-bold text-slate-100 font-serif leading-tight line-clamp-2">{awards.bestValue.name}</h4>
                 </div>
-                <div className="text-xs text-slate-400 mt-3 pt-2 border-t border-slate-850 flex justify-between items-center">
-                  <span>By: <strong>{awards.bestValue.submitted_by}</strong></span>
-                  <span className="text-emerald-400 font-bold">${awards.bestValue.price}</span>
+                <div className="text-xs text-slate-500 mt-3 pt-2 border-t border-emerald-200 flex justify-between items-center">
+                  <span>By: <strong className="text-slate-100">{awards.bestValue.submitted_by}</strong></span>
+                  <span className="text-emerald-800 font-bold font-mono">${awards.bestValue.price}</span>
                 </div>
               </div>
             )}
 
             {/* Award 4: Giant Killer */}
-            <div className="glass-panel border-purple-800/30 bg-gradient-to-b from-purple-950/10 to-slate-950/40 rounded-2xl p-5 text-center relative overflow-hidden flex flex-col justify-between min-h-[180px]">
-              <div className="absolute top-0 right-0 w-16 h-16 bg-purple-500/5 rounded-bl-full blur-sm" />
+            <div className="glass-panel border-2 border-purple-200 bg-gradient-to-b from-purple-50 via-purple-50/40 to-white rounded-2xl p-5 text-center relative overflow-hidden flex flex-col justify-between min-h-[180px] shadow-sm">
+              <div className="absolute top-0 right-0 w-16 h-16 bg-purple-400/10 rounded-bl-full blur-sm" />
               <div className="space-y-2">
-                <Shield className="w-8 h-8 text-purple-400 mx-auto" />
-                <p className="text-[10px] text-purple-400 font-extrabold uppercase tracking-widest">Giant Killer (Cheapest Win)</p>
+                <Shield className="w-8 h-8 text-purple-700 mx-auto" />
+                <p className="text-[10px] text-purple-900 font-extrabold uppercase tracking-widest">Giant Killer (Cheapest Win)</p>
                 {awards.giantKiller ? (
                   <div className="space-y-1">
                     <h4 className="text-xs font-bold text-slate-100 leading-tight line-clamp-2">
                       {awards.giantKiller.winner.name} (${awards.giantKiller.winner.price.toFixed(0)})
                     </h4>
-                    <p className="text-[9px] text-purple-300 font-bold uppercase tracking-wider">Defeated</p>
-                    <h4 className="text-xs text-slate-400 leading-tight line-clamp-1">
+                    <p className="text-[9px] text-purple-800 font-bold uppercase tracking-wider">Defeated</p>
+                    <h4 className="text-xs text-slate-500 leading-tight line-clamp-1">
                       {awards.giantKiller.loser.name} (${awards.giantKiller.loser.price.toFixed(0)})
                     </h4>
                   </div>
@@ -581,9 +580,9 @@ export default function Dashboard({
                   <h4 className="text-sm font-medium text-slate-500 pt-3">No major giant killings. Price followed expectations!</h4>
                 )}
               </div>
-              <div className="text-xs text-slate-400 mt-3 pt-2 border-t border-slate-850 flex justify-between items-center">
+              <div className="text-xs text-slate-500 mt-3 pt-2 border-t border-purple-200 flex justify-between items-center">
                 <span>Margin:</span>
-                <span className="text-purple-400 font-bold">
+                <span className="text-purple-800 font-bold font-mono">
                   {awards.giantKiller ? `$${awards.giantKiller.margin.toFixed(2)} diff` : 'N/A'}
                 </span>
               </div>
@@ -594,13 +593,13 @@ export default function Dashboard({
           <div className="glass-panel rounded-2xl p-6 space-y-6">
             <div className="border-b border-slate-850 pb-3 flex justify-between items-center">
               <div>
-                <h3 className="text-lg font-semibold text-slate-200">Price vs. Value Chart</h3>
+                <h3 className="text-lg font-semibold text-slate-100">Price vs. Value Chart</h3>
                 <p className="text-xs text-slate-500">Analyze the correlation between a wine's cost and its average score. Optimal region: top left!</p>
               </div>
             </div>
 
             {/* SVG Responsive Chart */}
-            <div className="w-full h-80 bg-slate-950/80 border border-slate-900 rounded-xl relative p-4 flex flex-col justify-between">
+            <div className="w-full h-80 bg-white border border-slate-800 rounded-xl relative p-4 flex flex-col justify-between shadow-inner">
               {/* Grid axes and plot */}
               <div className="flex-1 w-full relative border-l border-b border-slate-800">
                 
@@ -608,7 +607,7 @@ export default function Dashboard({
                 {[25, 50, 75, 100].map(level => (
                   <div 
                     key={level}
-                    className="absolute left-0 right-0 border-t border-slate-900/60 flex justify-end text-[9px] text-slate-600 font-mono pr-2"
+                    className="absolute left-0 right-0 border-t border-slate-800/80 flex justify-end text-[9px] text-slate-400 font-mono pr-2"
                     style={{ bottom: `${level}%`, transform: 'translateY(-50%)' }}
                   >
                     Score: {level}
@@ -616,10 +615,10 @@ export default function Dashboard({
                 ))}
 
                 {/* Quad labels */}
-                <div className="absolute top-2 left-2 text-[8px] font-bold text-emerald-500/40 uppercase tracking-widest">Smart Buy (High Quality, Low Price)</div>
-                <div className="absolute top-2 right-2 text-[8px] font-bold text-gold-500/40 uppercase tracking-widest">Splurge Worthy (High Quality, High Price)</div>
-                <div className="absolute bottom-2 left-2 text-[8px] font-bold text-slate-600/40 uppercase tracking-widest">Neutral (Low Quality, Low Price)</div>
-                <div className="absolute bottom-2 right-2 text-[8px] font-bold text-rose-500/40 uppercase tracking-widest">Overpriced (Low Quality, High Price)</div>
+                <div className="absolute top-2 left-2 text-[8px] font-bold text-emerald-800/60 uppercase tracking-widest">Smart Buy (High Quality, Low Price)</div>
+                <div className="absolute top-2 right-2 text-[8px] font-bold text-amber-800/60 uppercase tracking-widest">Splurge Worthy (High Quality, High Price)</div>
+                <div className="absolute bottom-2 left-2 text-[8px] font-bold text-slate-500/60 uppercase tracking-widest">Neutral (Low Quality, Low Price)</div>
+                <div className="absolute bottom-2 right-2 text-[8px] font-bold text-rose-800/60 uppercase tracking-widest">Overpriced (Low Quality, High Price)</div>
 
                 {/* Plot dots */}
                 {wineStats.map(w => {
@@ -643,20 +642,20 @@ export default function Dashboard({
                       }}
                     >
                       {/* Interactive plot point */}
-                      <div className="w-4 h-4 rounded-full bg-wine-500 hover:bg-gold-400 border border-white/60 hover:scale-125 transition-transform flex items-center justify-center text-[9px] font-black text-white" />
+                      <div className="w-4 h-4 rounded-full bg-[#821D35] hover:bg-amber-600 border border-white hover:scale-125 transition-transform flex items-center justify-center text-[9px] font-black text-white shadow-sm" />
                       
                       {/* Tooltip on hover */}
-                      <div className="hidden group-hover:block absolute bottom-6 left-1/2 -translate-x-1/2 w-48 bg-slate-900 border border-slate-800 rounded-lg p-2.5 shadow-2xl z-20 text-xs space-y-1">
+                      <div className="hidden group-hover:block absolute bottom-6 left-1/2 -translate-x-1/2 w-48 bg-white border border-slate-800 rounded-lg p-2.5 shadow-xl z-20 text-xs space-y-1">
                         <p className="font-bold text-slate-100 line-clamp-1">{w.name}</p>
                         <div className="flex justify-between text-[10px] text-slate-400">
-                          <span>Rating: <strong>{w.score}/100</strong></span>
-                          <span>Price: <strong className="text-amber-400">${w.price.toFixed(2)}</strong></span>
+                          <span>Rating: <strong className="text-slate-100">{w.score}/100</strong></span>
+                          <span>Price: <strong className="text-amber-800 font-mono">${w.price.toFixed(2)}</strong></span>
                         </div>
                         <p className="text-[9px] text-slate-500">Brought by: {w.submitted_by}</p>
                       </div>
 
                       {/* Label below dot */}
-                      <span className="absolute top-4 left-1/2 -translate-x-1/2 font-bold text-[10px] text-slate-400 font-serif">
+                      <span className="absolute top-4 left-1/2 -translate-x-1/2 font-bold text-[10px] text-slate-500 font-serif">
                         {w.blind_label}
                       </span>
                     </div>
@@ -675,7 +674,7 @@ export default function Dashboard({
 
           {/* Full stats breakdown table */}
           <div className="glass-panel rounded-2xl p-6 space-y-4">
-            <h3 className="text-lg font-semibold text-slate-200">Wine Specifications Breakdown</h3>
+            <h3 className="text-lg font-semibold text-slate-100">Wine Specifications Breakdown</h3>
             
             <div className="overflow-x-auto">
               <table className="w-full text-left text-xs border-collapse">
@@ -690,21 +689,21 @@ export default function Dashboard({
                     <th className="py-3 px-4">Tasting Notes</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-850/40 text-slate-300">
+                <tbody className="divide-y divide-slate-800 text-slate-300">
                   {leaderboard.map(w => (
-                    <tr key={w.id} className="hover:bg-slate-900/20">
+                    <tr key={w.id} className="hover:bg-slate-850/50">
                       <td className="py-3 px-2 font-black font-serif text-wine-400">
-                        <span className="w-6 h-6 rounded-full bg-slate-950 border border-slate-800 flex items-center justify-center">{w.blind_label}</span>
+                        <span className="w-6 h-6 rounded-full bg-[#6E172C] text-white flex items-center justify-center font-bold text-xs">{w.blind_label}</span>
                       </td>
                       <td className="py-3 px-4">
-                        <div className="font-semibold text-slate-200">{w.name}</div>
+                        <div className="font-semibold text-slate-100">{w.name}</div>
                         <div className="text-[10px] text-slate-500">{w.producer} {w.vintage && `(${w.vintage})`}</div>
                       </td>
                       <td className="py-3 px-4 font-medium text-slate-400">{w.submitted_by}</td>
-                      <td className="py-3 px-4 font-mono font-bold text-amber-500">${w.price.toFixed(2)}</td>
-                      <td className="py-3 px-4 text-center font-bold text-slate-200">{isStandaloneSession ? w.ratingsCount : w.wins}</td>
-                      <td className="py-3 px-4 text-center font-bold text-wine-300">{w.score}/100</td>
-                      <td className="py-3 px-4 text-slate-450 line-clamp-1 max-w-xs">{w.tasting_notes || "N/A"}</td>
+                      <td className="py-3 px-4 font-mono font-bold text-amber-800">${w.price.toFixed(2)}</td>
+                      <td className="py-3 px-4 text-center font-bold text-slate-100">{isStandaloneSession ? w.ratingsCount : w.wins}</td>
+                      <td className="py-3 px-4 text-center font-bold text-[#6E172C]">{w.score}/100</td>
+                      <td className="py-3 px-4 text-slate-400 line-clamp-1 max-w-xs">{w.tasting_notes || "N/A"}</td>
                     </tr>
                   ))}
                 </tbody>

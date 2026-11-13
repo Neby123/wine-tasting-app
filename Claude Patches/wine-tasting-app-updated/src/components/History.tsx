@@ -67,7 +67,7 @@ export default function History({ voterName, onRefresh }: HistoryProps) {
 
   return (
     <div className="space-y-8 animate-fade-in pb-12">
-      <div className="flex justify-between items-center border-b border-slate-900 pb-4">
+      <div className="flex justify-between items-center border-b border-slate-800 pb-4">
         <div className="space-y-1">
           <h2 className="text-3xl font-bold font-serif text-wine-100">Historical Archives</h2>
           <p className="text-slate-400 text-sm">
@@ -76,7 +76,7 @@ export default function History({ voterName, onRefresh }: HistoryProps) {
         </div>
         <button
           onClick={handleRefresh}
-          className="p-2 border border-slate-850 hover:bg-slate-900 text-slate-400 hover:text-slate-200 rounded-lg text-xs transition-colors flex items-center gap-1.5"
+          className="p-2 border border-slate-800 bg-white hover:bg-slate-850 text-slate-400 hover:text-slate-100 rounded-lg text-xs transition-colors flex items-center gap-1.5 shadow-xs"
           title="Reload history data"
         >
           <RefreshCw className="w-4 h-4" />
@@ -85,10 +85,10 @@ export default function History({ voterName, onRefresh }: HistoryProps) {
 
       {loading ? (
         <div className="flex justify-center items-center py-12">
-          <RefreshCw className="w-8 h-8 text-wine-500 animate-spin" />
+          <RefreshCw className="w-8 h-8 text-[#6E172C] animate-spin" />
         </div>
       ) : sessions.length === 0 ? (
-        <div className="glass-panel rounded-2xl p-8 text-center text-slate-500">
+        <div className="glass-panel rounded-2xl p-8 text-center text-slate-500 border border-slate-800 bg-white shadow-sm">
           No historical wine tasting sessions found in the database.
         </div>
       ) : (
@@ -184,16 +184,16 @@ export default function History({ voterName, onRefresh }: HistoryProps) {
             <div 
               key={session.id} 
               className={`glass-panel rounded-2xl overflow-hidden border transition-all duration-300 ${
-                isExpanded ? 'border-wine-800/40' : 'border-slate-800/60'
+                isExpanded ? 'border-[#6E172C]/40 bg-white shadow-md' : 'border-slate-800 bg-white shadow-xs'
               }`}
             >
               {/* Session Summary Bar */}
               <div 
                 onClick={() => handleToggleExpand(session.id)}
-                className="p-6 flex flex-col md:flex-row md:items-center justify-between gap-4 cursor-pointer hover:bg-slate-900/30 transition-colors"
+                className="p-6 flex flex-col md:flex-row md:items-center justify-between gap-4 cursor-pointer hover:bg-slate-850/40 transition-colors"
               >
                 <div className="space-y-2">
-                  <div className="flex items-center gap-2 text-xs text-slate-400">
+                  <div className="flex items-center gap-2 text-xs text-slate-500">
                     <Calendar className="w-3.5 h-3.5" />
                     <span>{session.date}</span>
                     <span>•</span>
@@ -205,21 +205,21 @@ export default function History({ voterName, onRefresh }: HistoryProps) {
                 <div className="flex items-center gap-6">
                   {/* Quick Winner Badge */}
                   <div className="text-right">
-                    <p className="text-[10px] text-gold-400 font-extrabold uppercase tracking-widest flex items-center justify-end gap-1">
-                      <Trophy className="w-3 h-3" /> Winner
+                    <p className="text-[10px] text-amber-800 font-extrabold uppercase tracking-widest flex items-center justify-end gap-1">
+                      <Trophy className="w-3 h-3 text-amber-600" /> Winner
                     </p>
-                    <p className="text-sm font-semibold text-slate-250 leading-tight">
+                    <p className="text-sm font-semibold text-slate-100 leading-tight">
                       {displayWinner}
                     </p>
                     {displayBroughtBy && displayBroughtBy !== 'Guest' && (
-                      <p className="text-xs text-slate-500">
-                        Brought by: {displayBroughtBy}
+                      <p className="text-xs text-slate-400">
+                        Brought by: <strong className="text-slate-100">{displayBroughtBy}</strong>
                       </p>
                     )}
                   </div>
 
                   {/* Expand icon */}
-                  <div className="text-slate-500 bg-slate-950 p-2 rounded-full border border-slate-850">
+                  <div className="text-slate-500 bg-slate-850 p-2 rounded-full border border-slate-800">
                     {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
                   </div>
                 </div>
@@ -227,39 +227,39 @@ export default function History({ voterName, onRefresh }: HistoryProps) {
 
               {/* Expanded Details Section */}
               {isExpanded && (
-                <div className="border-t border-slate-850 bg-slate-950/40 p-6 space-y-6 animate-scale-in">
+                <div className="border-t border-slate-800 bg-slate-950/60 p-6 space-y-6 animate-scale-in">
                   
                   {/* Quick Medals Summary */}
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                    <div className="bg-slate-950 border border-slate-900 rounded-xl p-4 space-y-1">
-                      <p className="text-[9px] text-gold-400 font-extrabold uppercase tracking-widest flex items-center gap-1">
-                        <Trophy className="w-3 h-3" /> Best in Show
+                    <div className="bg-amber-50/80 border border-amber-200 rounded-xl p-4 space-y-1 shadow-xs">
+                      <p className="text-[9px] text-amber-900 font-extrabold uppercase tracking-widest flex items-center gap-1">
+                        <Trophy className="w-3 h-3 text-amber-700" /> Best in Show
                       </p>
-                      <p className="text-xs font-semibold text-slate-350">{displayGroupWinner}</p>
+                      <p className="text-xs font-semibold text-slate-100">{displayGroupWinner}</p>
                     </div>
 
-                    <div className="bg-slate-950 border border-slate-900 rounded-xl p-4 space-y-1">
-                      <p className="text-[9px] text-emerald-400 font-extrabold uppercase tracking-widest flex items-center gap-1">
-                        <DollarSign className="w-3 h-3" /> Best Value Selection
+                    <div className="bg-emerald-50/80 border border-emerald-200 rounded-xl p-4 space-y-1 shadow-xs">
+                      <p className="text-[9px] text-emerald-800 font-extrabold uppercase tracking-widest flex items-center gap-1">
+                        <DollarSign className="w-3 h-3 text-emerald-700" /> Best Value Selection
                       </p>
-                      <p className="text-xs font-semibold text-slate-350">{session.bestValue}</p>
+                      <p className="text-xs font-semibold text-slate-100">{session.bestValue}</p>
                     </div>
 
-                    <div className="bg-slate-950 border border-slate-900 rounded-xl p-4 space-y-1">
-                      <p className="text-[9px] text-purple-400 font-extrabold uppercase tracking-widest flex items-center gap-1">
-                        <Award className="w-3 h-3" /> Giant Killer Match
+                    <div className="bg-purple-50/80 border border-purple-200 rounded-xl p-4 space-y-1 shadow-xs">
+                      <p className="text-[9px] text-purple-900 font-extrabold uppercase tracking-widest flex items-center gap-1">
+                        <Award className="w-3 h-3 text-purple-700" /> Giant Killer Match
                       </p>
-                      <p className="text-xs font-semibold text-slate-350 line-clamp-1">{displayGiantKiller || "No giant killer matches logged"}</p>
+                      <p className="text-xs font-semibold text-slate-100 line-clamp-1">{displayGiantKiller || "No giant killer matches logged"}</p>
                     </div>
                   </div>
 
                   {/* Wines Table */}
                   <div className="space-y-3">
-                    <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider">Tournament Results & Specs</h4>
+                    <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider">Tournament Results & Specs</h4>
                     <div className="overflow-x-auto">
                       <table className="w-full text-left text-xs border-collapse">
                         <thead>
-                          <tr className="border-b border-slate-900 text-slate-500 font-bold">
+                          <tr className="border-b border-slate-800 text-slate-500 font-bold uppercase tracking-wider">
                             <th className="py-2.5 px-2">Rank</th>
                             {sessionWines[0]?.blind_label && <th className="py-2.5 px-2 text-center">Label</th>}
                             <th className="py-2.5 px-3">Wine Details</th>
@@ -269,22 +269,22 @@ export default function History({ voterName, onRefresh }: HistoryProps) {
                             <th className="py-2.5 px-3 text-center">Appreciation Score</th>
                           </tr>
                         </thead>
-                        <tbody className="divide-y divide-slate-900/60 text-slate-300">
+                        <tbody className="divide-y divide-slate-800 text-slate-300">
                           {sortedWines.map((wine, idx) => (
-                            <tr key={wine.name} className="hover:bg-slate-900/10">
+                            <tr key={wine.name} className="hover:bg-slate-850/50">
                               <td className="py-2.5 px-2 font-mono text-slate-500 font-bold">#{idx+1}</td>
                               {wine.blind_label && (
-                                <td className="py-2.5 px-2 text-center font-bold text-wine-400 font-serif">
-                                  {wine.blind_label}
+                                <td className="py-2.5 px-2 text-center font-bold font-serif">
+                                  <span className="w-6 h-6 rounded-full bg-[#6E172C] text-white inline-flex items-center justify-center text-xs font-bold shadow-xs">{wine.blind_label}</span>
                                 </td>
                               )}
-                              <td className="py-2.5 px-3 font-semibold text-slate-200">{wine.name}</td>
+                              <td className="py-2.5 px-3 font-semibold text-slate-100">{wine.name}</td>
                               {hasContributors && <td className="py-2.5 px-3 text-slate-400">{wine.submitted_by}</td>}
-                              <td className="py-2.5 px-3 font-mono font-bold text-amber-500">${Number(wine.price ?? 0).toFixed(2)}</td>
-                              <td className="py-2.5 px-3 text-center font-bold text-slate-200">
+                              <td className="py-2.5 px-3 font-mono font-bold text-amber-800">${Number(wine.price ?? 0).toFixed(2)}</td>
+                              <td className="py-2.5 px-3 text-center font-bold text-slate-100">
                                 {isStandaloneArchive ? wine.ratingsCount : wine.wins}
                               </td>
-                              <td className="py-2.5 px-3 text-center font-bold text-wine-300">{wine.score}/100</td>
+                              <td className="py-2.5 px-3 text-center font-bold text-[#6E172C]">{wine.score}/100</td>
                             </tr>
                           ))}
                         </tbody>
@@ -293,13 +293,13 @@ export default function History({ voterName, onRefresh }: HistoryProps) {
                   </div>
 
                   {/* Price vs Performance chart summary */}
-                  <div className="pt-2 border-t border-slate-900 text-[10px] text-slate-500 flex justify-between items-center">
+                  <div className="pt-2 border-t border-slate-800 text-[10px] text-slate-500 flex justify-between items-center">
                     {session.winnerBroughtBy && session.winnerBroughtBy !== 'Guest' ? (
-                      <span>Winner brought by: <strong className="text-slate-400">{session.winnerBroughtBy}</strong></span>
+                      <span>Winner brought by: <strong className="text-slate-100">{session.winnerBroughtBy}</strong></span>
                     ) : (
                       <span></span>
                     )}
-                    <span>Second Place: <strong className="text-slate-400">{session.secondPlace}</strong></span>
+                    <span>Second Place: <strong className="text-slate-100">{session.secondPlace}</strong></span>
                   </div>
 
                   {/* Individual Tasting Journal Section */}
@@ -308,10 +308,10 @@ export default function History({ voterName, onRefresh }: HistoryProps) {
                     const activeVoter = selectedVoterName[session.id] || (uniqueVoters.includes(voterName) ? voterName : uniqueVoters[0] || "");
                     
                     return (
-                      <div className="border-t border-slate-900 pt-6 mt-6 space-y-4">
+                      <div className="border-t border-slate-800 pt-6 mt-6 space-y-4">
                         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                           <div className="space-y-0.5">
-                            <h4 className="text-sm font-bold text-wine-200 font-serif">Historical Tasting Journal</h4>
+                            <h4 className="text-sm font-bold text-wine-100 font-serif">Historical Tasting Journal</h4>
                             <p className="text-xs text-slate-500">Review individual ratings, notes, and price-performance metrics logged during this session.</p>
                           </div>
                           
@@ -321,7 +321,7 @@ export default function History({ voterName, onRefresh }: HistoryProps) {
                               <select
                                 value={activeVoter}
                                 onChange={(e) => setSelectedVoterName(prev => ({ ...prev, [session.id]: e.target.value }))}
-                                className="px-2.5 py-1 bg-slate-950 border border-slate-850 rounded-lg text-slate-200 text-xs focus:outline-none focus:ring-1 focus:ring-wine-500 font-semibold"
+                                className="px-2.5 py-1 bg-white border border-slate-800 rounded-lg text-slate-100 text-xs focus:outline-none focus:ring-1 focus:ring-[#6E172C] font-semibold shadow-xs"
                               >
                                 {uniqueVoters.map(v => (
                                   <option key={v} value={v}>{v}</option>
@@ -345,23 +345,23 @@ export default function History({ voterName, onRefresh }: HistoryProps) {
                                 <div 
                                   key={label}
                                   className={`glass-panel rounded-xl p-4.5 space-y-3 flex flex-col justify-between min-h-[140px] relative overflow-hidden transition-all duration-300 ${
-                                    evaluations ? 'border-wine-800/20 bg-slate-900/30' : 'opacity-30 bg-slate-950/15'
+                                    evaluations ? 'border-wine-800/40 bg-white shadow-xs' : 'opacity-40 bg-slate-850/40 border-slate-800'
                                   }`}
                                 >
                                   <div className="space-y-2.5">
                                     <div className="flex justify-between items-start">
-                                      <span className="w-7 h-7 rounded-full bg-wine-900/60 border border-wine-850 text-white font-extrabold font-serif flex items-center justify-center text-xs shadow-inner">
+                                      <span className="w-7 h-7 rounded-full bg-[#6E172C] text-white font-extrabold font-serif flex items-center justify-center text-xs shadow-xs">
                                         {label}
                                       </span>
                                       {evaluations && evaluations.length > 0 && (
-                                        <span className="text-[9px] bg-slate-950 px-2 py-0.5 border border-slate-850 text-slate-400 rounded-full font-mono font-semibold">
+                                        <span className="text-[9px] bg-slate-850 px-2 py-0.5 border border-slate-800 text-slate-500 rounded-full font-mono font-semibold">
                                           {evaluations.length} {isStandaloneGroup ? (evaluations.length === 1 ? 'Rating' : 'Ratings') : (evaluations.length === 1 ? 'Match' : 'Matches')}
                                         </span>
                                       )}
                                     </div>
 
                                     <div>
-                                      <h5 className="text-xs font-bold text-wine-200 font-serif line-clamp-1">
+                                      <h5 className="text-xs font-bold text-slate-100 font-serif line-clamp-1">
                                         {wineDetail ? wineDetail.name : `Wine ${label}`}
                                       </h5>
                                       {wineDetail && (
@@ -379,35 +379,35 @@ export default function History({ voterName, onRefresh }: HistoryProps) {
                                           const opponentName = opponentWine ? opponentWine.name : `Wine ${ev.opponent}`;
                                           
                                           const roundNames: Record<string, string> = { 
-                                            Q1: 'Quarterfinal', 
-                                            Q2: 'Quarterfinal', 
-                                            Q3: 'Quarterfinal', 
-                                            Q4: 'Quarterfinal', 
-                                            S1: 'Semifinal', 
-                                            S2: 'Semifinal', 
-                                            F: 'Final' 
+                                             Q1: 'Quarterfinal', 
+                                             Q2: 'Quarterfinal', 
+                                             Q3: 'Quarterfinal', 
+                                             Q4: 'Quarterfinal', 
+                                             S1: 'Semifinal', 
+                                             S2: 'Semifinal', 
+                                             F: 'Final' 
                                           };
                                           const roundName = roundNames[ev.matchId] || ev.matchId;
 
                                           return (
-                                            <div key={eIdx} className="text-[10px] leading-relaxed bg-slate-950/40 p-2 rounded border border-slate-900/85 space-y-1">
+                                            <div key={eIdx} className="text-[10px] leading-relaxed bg-slate-850/70 p-2 rounded border border-slate-800 space-y-1">
                                               <div className="flex justify-between items-start gap-2">
                                                 <div className="flex flex-col">
                                                   <span className="text-slate-500 text-[8px] font-extrabold uppercase tracking-widest leading-none mb-0.5">{roundName}</span>
-                                                  {ev.opponent && <span className="text-slate-300 font-semibold line-clamp-1">vs {opponentName}</span>}
+                                                  {ev.opponent && <span className="text-slate-100 font-semibold line-clamp-1">vs {opponentName}</span>}
                                                 </div>
                                                 {ev.isStandalone ? (
-                                                  <span className="shrink-0 font-bold text-emerald-400 font-mono">
+                                                  <span className="shrink-0 font-bold text-emerald-800 font-mono">
                                                     {ev.score}/100
                                                   </span>
                                                 ) : (
-                                                  <span className={`shrink-0 font-bold ${isWin ? 'text-emerald-400' : 'text-slate-500 line-through'}`}>
+                                                  <span className={`shrink-0 font-bold ${isWin ? 'text-emerald-800' : 'text-slate-400 line-through'}`}>
                                                     {isWin ? 'Win' : 'Loss'}
                                                   </span>
                                                 )}
                                               </div>
                                               {ev.notes && (
-                                                <p className="text-slate-450 italic mt-0.5 font-sans">
+                                                <p className="text-slate-400 italic mt-0.5 font-sans">
                                                   "{ev.notes}"
                                                 </p>
                                               )}
@@ -424,7 +424,7 @@ export default function History({ voterName, onRefresh }: HistoryProps) {
                             })}
                           </div>
                         ) : (
-                          <div className="text-center py-6 text-xs text-slate-500 bg-slate-950/30 border border-slate-900 rounded-xl">
+                          <div className="text-center py-6 text-xs text-slate-500 bg-white border border-slate-800 rounded-xl">
                             Select a taster from the dropdown to display their journal.
                           </div>
                         )}

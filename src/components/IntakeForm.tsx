@@ -234,7 +234,7 @@ export default function IntakeForm({
   };
 
   const inputClass =
-    "w-full px-3 py-2 bg-slate-950 border border-slate-800 focus:border-wine-500 rounded-lg text-slate-200 text-sm focus:outline-none focus:ring-1 focus:ring-wine-500";
+    "w-full px-3 py-2 bg-white border border-slate-700 focus:border-[#821D35] rounded-lg text-slate-100 placeholder:text-slate-500 text-sm focus:outline-none focus:ring-1 focus:ring-[#821D35] font-medium";
 
   return (
     <div className="space-y-8 animate-fade-in">
@@ -249,8 +249,8 @@ export default function IntakeForm({
         {/* Left Side: Intake Form */}
         <div className="lg:col-span-2 space-y-6">
           <div className="glass-panel rounded-2xl p-6 space-y-4">
-            <h3 className="text-lg font-semibold text-gold-300 flex items-center gap-2">
-              <Plus className="w-5 h-5" /> Log a Bottle
+            <h3 className="text-lg font-semibold text-wine-200 flex items-center gap-2">
+              <Plus className="w-5 h-5 text-wine-400" /> Log a Bottle
             </h3>
 
             <form onSubmit={handleSubmit} className="space-y-4">
@@ -268,8 +268,8 @@ export default function IntakeForm({
                         onClick={() => setSubmittedBy(couple)}
                         className={`py-1 px-2.5 rounded-lg text-xs font-semibold border transition-all ${
                           submittedBy === couple
-                            ? 'bg-amber-500/20 border-amber-400 text-amber-200'
-                            : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-slate-200'
+                            ? 'bg-[#6E172C] text-white border-[#5A1425] shadow-xs'
+                            : 'bg-white border-slate-800 text-slate-300 hover:bg-slate-850'
                         }`}
                       >
                         {couple}
@@ -287,7 +287,7 @@ export default function IntakeForm({
                       placeholder="e.g. Jack & Alexcia"
                       value={submittedBy}
                       onChange={(e) => setSubmittedBy(e.target.value)}
-                      className="w-full pl-9 pr-3 py-2 bg-slate-950 border border-slate-800 focus:border-wine-500 rounded-lg text-slate-200 text-sm focus:outline-none focus:ring-1 focus:ring-wine-500 font-semibold"
+                      className="w-full pl-9 pr-3 py-2 bg-white border border-slate-700 focus:border-[#821D35] rounded-lg text-slate-100 placeholder:text-slate-500 text-sm focus:outline-none focus:ring-1 focus:ring-[#821D35] font-semibold"
                     />
                   </div>
                 </div>
@@ -335,12 +335,12 @@ export default function IntakeForm({
               </div>
 
               {/* Auto-fill: infer descriptive details from name + vintage */}
-              <div className="rounded-xl border border-wine-900/40 bg-wine-950/20 p-3 space-y-2">
+              <div className="rounded-xl border border-wine-800/40 bg-wine-950/40 p-3 space-y-2">
                 <button
                   type="button"
                   onClick={handleAutofill}
                   disabled={enriching || !wineName.trim()}
-                  className="w-full py-2 px-4 bg-gradient-to-r from-wine-800 to-wine-600 hover:from-wine-700 hover:to-wine-500 disabled:from-slate-800 disabled:to-slate-900 disabled:text-slate-500 text-white font-semibold rounded-lg text-sm transition-all flex items-center justify-center gap-2"
+                  className="w-full py-2 px-4 bg-gradient-to-r from-[#821D35] to-[#5A1425] hover:from-[#6E172C] hover:to-[#3D0C17] disabled:from-slate-800 disabled:to-slate-850 disabled:text-slate-500 text-white font-semibold rounded-lg text-sm transition-all flex items-center justify-center gap-2 shadow-xs"
                 >
                   {enriching ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
                   {enriching ? 'Looking up…' : 'Auto-fill details'}
@@ -349,8 +349,8 @@ export default function IntakeForm({
                   Fills varietal, region, country &amp; style from the name. Price comes back only as a rough estimate — set it to what you actually paid, since value stats depend on it.
                 </p>
                 {enrichMsg && (
-                  <p className="text-[11px] text-emerald-300/90 flex items-start gap-1.5">
-                    <Sparkles className="w-3 h-3 mt-0.5 shrink-0" /> {enrichMsg}
+                  <p className="text-[11px] text-emerald-800 flex items-start gap-1.5 font-medium">
+                    <Sparkles className="w-3 h-3 mt-0.5 shrink-0 text-emerald-700" /> {enrichMsg}
                   </p>
                 )}
               </div>
@@ -416,7 +416,7 @@ export default function IntakeForm({
                 <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1">
                   Price ($ USD) <span className="text-rose-400">*</span>
                   {priceIsEstimate && (
-                    <span className="ml-2 text-[10px] text-amber-400 normal-case tracking-normal">estimate — set to what you paid</span>
+                    <span className="ml-2 text-[10px] text-amber-800 normal-case tracking-normal font-medium">estimate — set to what you paid</span>
                   )}
                 </label>
                 <div className="relative">
@@ -431,7 +431,7 @@ export default function IntakeForm({
                     placeholder="24.99"
                     value={price}
                     onChange={(e) => { setPrice(e.target.value); setPriceIsEstimate(false); }}
-                    className={`w-full pl-9 pr-3 py-2 bg-slate-950 border rounded-lg text-slate-200 text-sm focus:outline-none focus:ring-1 focus:ring-wine-500 ${priceIsEstimate ? 'border-amber-700/60' : 'border-slate-800 focus:border-wine-500'}`}
+                    className={`w-full pl-9 pr-3 py-2 bg-white border rounded-lg text-slate-100 placeholder:text-slate-500 text-sm focus:outline-none focus:ring-1 focus:ring-[#821D35] ${priceIsEstimate ? 'border-amber-400' : 'border-slate-700 focus:border-[#821D35]'}`}
                   />
                 </div>
               </div>
@@ -450,13 +450,13 @@ export default function IntakeForm({
               </div>
 
               {errorMsg && (
-                <p className="text-rose-400 text-sm border border-rose-900/30 bg-rose-950/20 px-3 py-2 rounded-lg">{errorMsg}</p>
+                <p className="text-rose-800 text-sm border border-rose-300 bg-rose-50 px-3 py-2 rounded-lg">{errorMsg}</p>
               )}
 
               <button
                 type="submit"
                 disabled={isSubmitting || !voterName}
-                className="w-full py-2.5 px-4 bg-gradient-to-r from-wine-800 to-wine-600 hover:from-wine-700 hover:to-wine-500 disabled:from-slate-800 disabled:to-slate-900 disabled:text-slate-500 text-white font-semibold rounded-lg text-sm shadow-lg hover:shadow-wine-950/50 transition-all flex items-center justify-center gap-2"
+                className="w-full py-2.5 px-4 bg-gradient-to-r from-[#821D35] to-[#5A1425] hover:from-[#6E172C] hover:to-[#3D0C17] disabled:from-slate-800 disabled:to-slate-850 disabled:text-slate-500 text-white font-semibold rounded-lg text-sm shadow-sm transition-all flex items-center justify-center gap-2"
               >
                 {isSubmitting ? "Saving..." : "Register Wine"}
               </button>
@@ -467,14 +467,14 @@ export default function IntakeForm({
         {/* Right Side: Saturday Lineup Preset + Logged Wines List */}
         <div className="lg:col-span-3 space-y-6">
           {isHost && (
-            <div className="glass-panel rounded-2xl p-5 border border-amber-800/30 bg-amber-950/10 space-y-4">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-800/80 pb-3">
+            <div className="glass-panel rounded-2xl p-5 border border-amber-300 bg-amber-50 text-amber-950 space-y-4 shadow-sm">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-amber-200/80 pb-3">
                 <div>
-                  <h3 className="text-base font-bold text-amber-300 flex items-center gap-2 font-serif">
-                    <PackagePlus className="w-4 h-4 text-amber-400" />
+                  <h3 className="text-base font-bold text-amber-950 flex items-center gap-2 font-serif">
+                    <PackagePlus className="w-4 h-4 text-amber-800" />
                     Saturday 11/14 Pinot Grigio Lineup ({SATURDAY_GRIGIO_LINEUP.length} Bottles)
                   </h3>
-                  <p className="text-[11px] text-slate-400">
+                  <p className="text-[11px] text-amber-900/80">
                     Pre-loaded from your bottle photos. Edit prices or contributor couples inline below after loading.
                   </p>
                 </div>
@@ -483,7 +483,7 @@ export default function IntakeForm({
                   <select
                     value={lineupContributor}
                     onChange={(e) => setLineupContributor(e.target.value)}
-                    className="px-2.5 py-1.5 bg-slate-950 border border-slate-800 rounded-lg text-xs text-slate-200 focus:outline-none focus:border-amber-500"
+                    className="px-2.5 py-1.5 bg-white border border-amber-300 rounded-lg text-xs text-amber-950 font-medium focus:outline-none focus:border-[#821D35]"
                     title="Default contributor when bulk-loading"
                   >
                     {['Ben & Monica', 'Jack & Alexcia', 'David & Abby'].map(c => (
@@ -494,7 +494,7 @@ export default function IntakeForm({
                     type="button"
                     onClick={handleLoadAllLineup}
                     disabled={bulkLoading || !voterName || SATURDAY_GRIGIO_LINEUP.every(b => wines.some(w => w.name.trim().toLowerCase() === b.name.trim().toLowerCase()))}
-                    className="py-1.5 px-3 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 disabled:from-slate-800 disabled:to-slate-900 disabled:text-slate-500 text-slate-950 font-bold rounded-lg text-xs transition-all whitespace-nowrap"
+                    className="py-1.5 px-3 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 disabled:from-slate-800 disabled:to-slate-850 disabled:text-slate-500 text-[#1E1814] font-bold rounded-lg text-xs transition-all whitespace-nowrap shadow-xs"
                   >
                     {bulkLoading ? 'Loading…' : 'Load All 6 Bottles'}
                   </button>
@@ -509,25 +509,25 @@ export default function IntakeForm({
                       key={bottle.name}
                       className={`p-2.5 rounded-xl border text-xs flex items-center justify-between gap-2 ${
                         alreadyAdded
-                          ? 'bg-emerald-950/15 border-emerald-900/40 text-slate-400'
-                          : 'bg-slate-950/60 border-slate-800/80 text-slate-200'
+                          ? 'bg-emerald-50 border-emerald-300 text-emerald-800'
+                          : 'bg-white border-amber-200/80 text-amber-950 shadow-xs'
                       }`}
                     >
                       <div className="min-w-0">
-                        <p className="font-semibold truncate">{bottle.name}</p>
+                        <p className="font-semibold truncate text-slate-100">{bottle.name}</p>
                         <p className="text-[10px] text-slate-500 truncate">
-                          {bottle.vintage} · {bottle.region} · <span className="text-amber-400">${bottle.price.toFixed(2)}</span>
+                          {bottle.vintage} · {bottle.region} · <span className="text-amber-800 font-bold">${bottle.price.toFixed(2)}</span>
                         </p>
                       </div>
                       {alreadyAdded ? (
-                        <span className="text-[10px] font-bold text-emerald-400 bg-emerald-950/40 border border-emerald-800/40 px-2 py-0.5 rounded-full shrink-0">
+                        <span className="text-[10px] font-bold text-emerald-800 bg-emerald-100 border border-emerald-300 px-2 py-0.5 rounded-full shrink-0">
                           ✓ Added
                         </span>
                       ) : (
                         <button
                           type="button"
                           onClick={() => handleFillFromLineup(bottle)}
-                          className="text-[10px] font-semibold px-2.5 py-1 rounded-lg bg-slate-900 hover:bg-wine-900/50 border border-slate-700 hover:border-wine-600 text-slate-200 shrink-0 transition-colors"
+                          className="text-[10px] font-semibold px-2.5 py-1 rounded-lg bg-white hover:bg-slate-850 border border-slate-700 hover:border-slate-600 text-slate-200 shrink-0 transition-colors shadow-xs"
                         >
                           Fill Form
                         </button>
@@ -541,12 +541,12 @@ export default function IntakeForm({
 
           <div className="glass-panel rounded-2xl p-6 space-y-4">
             <div className="flex justify-between items-center border-b border-slate-800 pb-3">
-              <h3 className="text-lg font-semibold text-slate-200 flex items-center gap-2">
+              <h3 className="text-lg font-semibold text-slate-100 flex items-center gap-2">
                 <WineIcon className="w-5 h-5 text-wine-400" />
                 Submitted Registry ({wines.length} bottle{wines.length === 1 ? '' : 's'})
               </h3>
               {isHost && (
-                <span className="text-xs bg-wine-900/50 border border-wine-700/50 px-2.5 py-1 rounded-full text-wine-300 font-semibold tracking-wide">
+                <span className="text-xs bg-wine-900 border border-wine-700 px-2.5 py-1 rounded-full text-wine-200 font-semibold tracking-wide shadow-xs">
                   Host View (Uncensored)
                 </span>
               )}
@@ -573,7 +573,7 @@ export default function IntakeForm({
                             value={editName}
                             onChange={(e) => setEditName(e.target.value)}
                             placeholder="Wine name"
-                            className="sm:col-span-2 px-2.5 py-1.5 bg-slate-950 border border-slate-700 rounded-lg text-xs text-slate-200 focus:outline-none focus:border-wine-500"
+                            className="sm:col-span-2 px-2.5 py-1.5 bg-white border border-slate-700 rounded-lg text-xs text-slate-100 focus:outline-none focus:border-[#821D35]"
                           />
                           <input
                             type="text"
@@ -581,7 +581,7 @@ export default function IntakeForm({
                             onChange={(e) => setEditSubmittedBy(e.target.value)}
                             disabled={!isHost}
                             placeholder="Brought by"
-                            className="px-2.5 py-1.5 bg-slate-950 border border-slate-700 disabled:opacity-50 rounded-lg text-xs text-slate-200 focus:outline-none focus:border-wine-500"
+                            className="px-2.5 py-1.5 bg-white border border-slate-700 disabled:opacity-50 rounded-lg text-xs text-slate-100 focus:outline-none focus:border-[#821D35]"
                           />
                           <div className="flex items-center gap-1.5">
                             <input
@@ -589,7 +589,7 @@ export default function IntakeForm({
                               value={editVintage}
                               onChange={(e) => setEditVintage(e.target.value)}
                               placeholder="Year"
-                              className="w-14 px-2 py-1.5 bg-slate-950 border border-slate-700 rounded-lg text-xs text-slate-200 focus:outline-none focus:border-wine-500"
+                              className="w-14 px-2 py-1.5 bg-white border border-slate-700 rounded-lg text-xs text-slate-100 focus:outline-none focus:border-[#821D35]"
                             />
                             <input
                               type="number"
@@ -598,7 +598,7 @@ export default function IntakeForm({
                               value={editPrice}
                               onChange={(e) => setEditPrice(e.target.value)}
                               placeholder="Price"
-                              className="w-20 px-2 py-1.5 bg-slate-950 border border-slate-700 rounded-lg text-xs text-slate-200 focus:outline-none focus:border-wine-500"
+                              className="w-20 px-2 py-1.5 bg-white border border-slate-700 rounded-lg text-xs text-slate-100 focus:outline-none focus:border-[#821D35]"
                             />
                           </div>
                         </div>
@@ -607,13 +607,13 @@ export default function IntakeForm({
                           {showDetails ? (
                             <>
                               <div className="flex items-center gap-2">
-                                <span className="font-semibold text-slate-200">{wine.name}</span>
-                                {wine.vintage && <span className="text-xs bg-slate-800 px-2 py-0.5 rounded text-slate-400">{wine.vintage}</span>}
+                                <span className="font-semibold text-slate-100">{wine.name}</span>
+                                {wine.vintage && <span className="text-xs bg-slate-850 border border-slate-800 px-2 py-0.5 rounded text-slate-300 font-mono">{wine.vintage}</span>}
                               </div>
                               <div className="text-xs text-slate-400 flex flex-wrap items-center gap-x-3 gap-y-1">
-                                <span>By: <strong className="text-slate-300">{wine.submitted_by}</strong></span>
+                                <span>By: <strong className="text-slate-200">{wine.submitted_by}</strong></span>
                                 <span>•</span>
-                                <span className="text-amber-400 font-medium">${wine.price.toFixed(2)}</span>
+                                <span className="text-amber-800 font-bold">${wine.price.toFixed(2)}</span>
                                 {wine.varietal && (
                                   <>
                                     <span>•</span>
@@ -635,7 +635,7 @@ export default function IntakeForm({
                                 <span className="italic text-slate-500">Hidden Blind Selection</span>
                               </div>
                               <div className="text-xs text-slate-400">
-                                Logged by: <strong className="text-slate-300">{wine.submitted_by}</strong>
+                                Logged by: <strong className="text-slate-200">{wine.submitted_by}</strong>
                               </div>
                             </>
                           )}
@@ -651,7 +651,7 @@ export default function IntakeForm({
                                 type="button"
                                 disabled={savingEdit}
                                 onClick={() => saveEditedWine(wine.id)}
-                                className="p-1.5 text-emerald-400 hover:bg-emerald-950/30 rounded-lg transition-colors"
+                                className="p-1.5 text-emerald-700 hover:bg-emerald-50 rounded-lg transition-colors"
                                 title="Save changes"
                               >
                                 <Check className="w-4 h-4" />
@@ -659,7 +659,7 @@ export default function IntakeForm({
                               <button
                                 type="button"
                                 onClick={cancelEditingWine}
-                                className="p-1.5 text-slate-400 hover:text-slate-200 hover:bg-slate-800 rounded-lg transition-colors"
+                                className="p-1.5 text-slate-400 hover:text-slate-200 hover:bg-slate-850 rounded-lg transition-colors"
                                 title="Cancel edit"
                               >
                                 <X className="w-4 h-4" />
@@ -671,7 +671,7 @@ export default function IntakeForm({
                                 <button
                                   type="button"
                                   onClick={() => startEditingWine(wine)}
-                                  className="p-1.5 text-slate-500 hover:text-amber-300 hover:bg-amber-950/20 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity focus:opacity-100"
+                                  className="p-1.5 text-slate-500 hover:text-amber-800 hover:bg-amber-50 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity focus:opacity-100"
                                   title="Edit bottle details"
                                 >
                                   <Edit2 className="w-4 h-4" />
@@ -680,7 +680,7 @@ export default function IntakeForm({
                               <button
                                 type="button"
                                 onClick={() => onDeleteWine(wine.id)}
-                                className="p-1.5 text-slate-500 hover:text-rose-400 hover:bg-rose-950/20 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity focus:opacity-100"
+                                className="p-1.5 text-slate-500 hover:text-rose-700 hover:bg-rose-50 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity focus:opacity-100"
                                 title="Delete wine"
                               >
                                 <Trash2 className="w-4 h-4" />
@@ -697,10 +697,10 @@ export default function IntakeForm({
 
             {/* Host actions to launch tasting */}
             {isHost && (
-              <div className="mt-6 border-t border-slate-850 pt-6 space-y-4">
-                <div className="bg-slate-950/60 border border-slate-800 rounded-xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div className="mt-6 border-t border-slate-800 pt-6 space-y-4">
+                <div className="bg-slate-850/80 border border-slate-800 rounded-xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-sm">
                   <div className="space-y-1">
-                    <p className="text-sm font-semibold text-slate-200">Host Launch Pad</p>
+                    <p className="text-sm font-semibold text-slate-100">Host Launch Pad</p>
                     <p className="text-xs text-slate-400">
                       {wines.length >= 1
                         ? `Ready to initiate! Place your ${wines.length} bottle${wines.length === 1 ? '' : 's'} into blind bags (A, B, C...) in random order. Once ready, click Start Tasting Session.`
@@ -710,7 +710,7 @@ export default function IntakeForm({
                   <button
                     onClick={onStartTasting}
                     disabled={wines.length < 1 || bulkLoading || isSubmitting || savingEdit}
-                    className="py-2.5 px-6 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 disabled:from-slate-800 disabled:to-slate-900 disabled:text-slate-500 text-slate-950 font-bold rounded-xl text-sm transition-all flex items-center justify-center gap-2 shadow-lg shadow-amber-950/20 whitespace-nowrap"
+                    className="py-2.5 px-6 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 disabled:from-slate-800 disabled:to-slate-850 disabled:text-slate-500 text-[#1E1814] font-bold rounded-xl text-sm transition-all flex items-center justify-center gap-2 shadow-sm whitespace-nowrap"
                   >
                     Start Tasting Session
                   </button>

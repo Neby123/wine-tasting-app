@@ -324,10 +324,10 @@ export default function TasterProfiles({ voterName }: TasterProfilesProps) {
 
   return (
     <div className="space-y-8 animate-fade-in pb-12">
-      <div className="flex justify-between items-center border-b border-slate-900 pb-4">
+      <div className="flex justify-between items-center border-b border-slate-800 pb-4">
         <div className="space-y-1">
           <h2 className="text-3xl font-bold font-serif text-wine-100 flex items-center gap-2">
-            <Users className="w-7 h-7 text-wine-400" /> Taster Profiles
+            <Users className="w-7 h-7 text-[#6E172C]" /> Taster Profiles
           </h2>
           <p className="text-slate-400 text-sm">
             What each person actually likes — measured blind, across every tasting.
@@ -335,7 +335,7 @@ export default function TasterProfiles({ voterName }: TasterProfilesProps) {
         </div>
         <button
           onClick={load}
-          className="p-2 rounded-lg border border-slate-800 text-slate-400 hover:text-slate-200 hover:border-wine-800 transition-colors"
+          className="p-2 rounded-lg border border-slate-800 bg-white text-slate-400 hover:text-slate-100 hover:border-[#6E172C] transition-colors shadow-xs"
           title="Refresh"
         >
           <RefreshCw className="w-4 h-4" />
@@ -357,8 +357,8 @@ export default function TasterProfiles({ voterName }: TasterProfilesProps) {
                 onClick={() => setSelected(v)}
                 className={`px-4 py-1.5 rounded-full text-sm font-semibold border transition-colors ${
                   selected === v
-                    ? 'bg-wine-800 border-wine-600 text-white'
-                    : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-slate-200 hover:border-wine-800'
+                    ? 'bg-[#6E172C] border-[#5A1425] text-white shadow-sm'
+                    : 'bg-white border-slate-800 text-slate-400 hover:text-slate-100 hover:border-slate-700 shadow-xs'
                 }`}
               >
                 {v}
@@ -370,34 +370,34 @@ export default function TasterProfiles({ voterName }: TasterProfilesProps) {
             <div className="space-y-6">
               {/* Headline stats */}
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                <div className="glass-panel rounded-2xl p-4 space-y-1">
+                <div className="glass-panel rounded-2xl p-4 space-y-1 bg-white border border-slate-800 shadow-xs">
                   <p className="text-[10px] uppercase tracking-widest text-slate-500 font-bold">Events</p>
                   <p className="text-2xl font-black font-serif text-slate-100">{profile.events}</p>
                   <p className="text-[11px] text-slate-500">{profile.signatureWines.length} wines rated</p>
                 </div>
 
-                <div className="glass-panel rounded-2xl p-4 space-y-1">
+                <div className="glass-panel rounded-2xl p-4 space-y-1 bg-white border border-slate-800 shadow-xs">
                   <p className="text-[10px] uppercase tracking-widest text-slate-500 font-bold">Price Instinct</p>
                   {profile.cheaperShare === null ? (
                     <p className="text-sm text-slate-500 pt-1">Not enough data</p>
                   ) : profile.cheaperShare >= 0.5 ? (
                     <>
-                      <p className="text-2xl font-black font-serif text-emerald-300 flex items-center gap-1">
-                        <TrendingDown className="w-5 h-5" /> {pct(profile.cheaperShare)}
+                      <p className="text-2xl font-black font-serif text-emerald-800 flex items-center gap-1">
+                        <TrendingDown className="w-5 h-5 text-emerald-700" /> {pct(profile.cheaperShare)}
                       </p>
                       <p className="text-[11px] text-slate-500">picks the cheaper wine (blind)</p>
                     </>
                   ) : (
                     <>
-                      <p className="text-2xl font-black font-serif text-amber-300 flex items-center gap-1">
-                        <TrendingUp className="w-5 h-5" /> {pct(1 - profile.cheaperShare)}
+                      <p className="text-2xl font-black font-serif text-amber-800 flex items-center gap-1">
+                        <TrendingUp className="w-5 h-5 text-amber-700" /> {pct(1 - profile.cheaperShare)}
                       </p>
                       <p className="text-[11px] text-slate-500">picks the pricier wine (blind)</p>
                     </>
                   )}
                 </div>
 
-                <div className="glass-panel rounded-2xl p-4 space-y-1">
+                <div className="glass-panel rounded-2xl p-4 space-y-1 bg-white border border-slate-800 shadow-xs">
                   <p className="text-[10px] uppercase tracking-widest text-slate-500 font-bold">Avg Pick Price</p>
                   <p className="text-2xl font-black font-serif text-slate-100">
                     {profile.avgPreferredPrice === null ? '—' : `$${profile.avgPreferredPrice.toFixed(0)}`}
@@ -405,7 +405,7 @@ export default function TasterProfiles({ voterName }: TasterProfilesProps) {
                   <p className="text-[11px] text-slate-500">of wines they favored</p>
                 </div>
 
-                <div className="glass-panel rounded-2xl p-4 space-y-1">
+                <div className="glass-panel rounded-2xl p-4 space-y-1 bg-white border border-slate-800 shadow-xs">
                   <p className="text-[10px] uppercase tracking-widest text-slate-500 font-bold">Contrarian</p>
                   <p className="text-2xl font-black font-serif text-slate-100">
                     {profile.contrarianShare === null ? '—' : pct(profile.contrarianShare)}
@@ -415,26 +415,26 @@ export default function TasterProfiles({ voterName }: TasterProfilesProps) {
               </div>
 
               {/* Taste signature */}
-              <div className="glass-panel rounded-2xl p-6 space-y-4">
-                <h3 className="text-lg font-semibold text-gold-300 flex items-center gap-2">
-                  <Sparkles className="w-5 h-5" /> {profile.name}'s taste signature
+              <div className="glass-panel rounded-2xl p-6 space-y-4 bg-white border border-slate-800 shadow-xs">
+                <h3 className="text-lg font-semibold text-slate-100 font-serif flex items-center gap-2">
+                  <Sparkles className="w-5 h-5 text-amber-600" /> {profile.name}'s taste signature
                 </h3>
 
                 {(profile.topStyle || profile.topRegion || profile.topVarietal) ? (
                   <div className="flex flex-wrap gap-2">
                     {profile.topStyle && (
-                      <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-wine-950/40 border border-wine-900/50 text-wine-200 text-xs font-semibold">
+                      <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-wine-950 border border-wine-800 text-[#6E172C] text-xs font-semibold shadow-xs">
                         <WineIcon className="w-3.5 h-3.5" /> {profile.topStyle[0]}
                       </span>
                     )}
                     {profile.topVarietal && (
-                      <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-slate-950 border border-slate-800 text-slate-300 text-xs font-semibold">
-                        <Grape className="w-3.5 h-3.5" /> {profile.topVarietal[0]}
+                      <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-slate-850 border border-slate-800 text-slate-100 text-xs font-semibold shadow-xs">
+                        <Grape className="w-3.5 h-3.5 text-amber-700" /> {profile.topVarietal[0]}
                       </span>
                     )}
                     {profile.topRegion && (
-                      <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-slate-950 border border-slate-800 text-slate-300 text-xs font-semibold">
-                        <MapPin className="w-3.5 h-3.5" /> {profile.topRegion[0]}
+                      <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-slate-850 border border-slate-800 text-slate-100 text-xs font-semibold shadow-xs">
+                        <MapPin className="w-3.5 h-3.5 text-emerald-700" /> {profile.topRegion[0]}
                       </span>
                     )}
                   </div>
@@ -447,23 +447,23 @@ export default function TasterProfiles({ voterName }: TasterProfilesProps) {
 
                 <div className="space-y-2 pt-1">
                   <p className="text-xs font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
-                    <Heart className="w-3.5 h-3.5 text-wine-400" /> Wines they loved most
+                    <Heart className="w-3.5 h-3.5 text-[#6E172C]" /> Wines they loved most
                   </p>
                   {profile.signatureWines.length === 0 ? (
                     <p className="text-xs text-slate-500">No standout picks recorded yet.</p>
                   ) : (
                     <div className="space-y-2">
                       {profile.signatureWines.map((w, i) => (
-                        <div key={i} className="flex items-center justify-between bg-slate-950/50 border border-slate-800/60 rounded-lg px-3 py-2">
+                        <div key={i} className="flex items-center justify-between bg-slate-850/60 border border-slate-800 rounded-lg px-3 py-2">
                           <div className="min-w-0">
-                            <p className="text-sm font-semibold text-slate-200 truncate">{w.wineName}</p>
+                            <p className="text-sm font-semibold text-slate-100 truncate">{w.wineName}</p>
                             <p className="text-[11px] text-slate-500 truncate">
                               {w.session}
                               {typeof w.price === 'number' ? ` · $${w.price.toFixed(2)}` : ''}
                               {w.varietal ? ` · ${w.varietal}` : ''}
                             </p>
                           </div>
-                          <span className="shrink-0 ml-3 text-xs font-black text-wine-300">{w.preference}/100</span>
+                          <span className="shrink-0 ml-3 text-xs font-black text-[#6E172C] font-mono">{w.preference}/100</span>
                         </div>
                       ))}
                     </div>
@@ -472,9 +472,9 @@ export default function TasterProfiles({ voterName }: TasterProfilesProps) {
               </div>
 
               {/* Agreement */}
-              <div className="glass-panel rounded-2xl p-6 space-y-4">
-                <h3 className="text-lg font-semibold text-slate-200 flex items-center gap-2">
-                  <Handshake className="w-5 h-5 text-wine-400" /> Who {profile.name} agrees with
+              <div className="glass-panel rounded-2xl p-6 space-y-4 bg-white border border-slate-800 shadow-xs">
+                <h3 className="text-lg font-semibold text-slate-100 font-serif flex items-center gap-2">
+                  <Handshake className="w-5 h-5 text-[#6E172C]" /> Who {profile.name} agrees with
                 </h3>
 
                 {agreements.length === 0 ? (
@@ -483,20 +483,20 @@ export default function TasterProfiles({ voterName }: TasterProfilesProps) {
                   <>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                       {ally && (
-                        <div className="rounded-xl border border-emerald-900/40 bg-emerald-950/20 p-3">
-                          <p className="text-[10px] uppercase tracking-widest text-emerald-400 font-bold flex items-center gap-1.5 flex-wrap">
-                            <Handshake className="w-3.5 h-3.5 shrink-0" /> Taste bud <span className="text-emerald-500 font-normal lowercase tracking-normal">(AKA Palate Twin)</span>
+                        <div className="rounded-xl border border-emerald-200 bg-emerald-50/80 p-3 shadow-xs">
+                          <p className="text-[10px] uppercase tracking-widest text-emerald-800 font-bold flex items-center gap-1.5 flex-wrap">
+                            <Handshake className="w-3.5 h-3.5 shrink-0 text-emerald-700" /> Taste bud <span className="text-emerald-700 font-normal lowercase tracking-normal">(AKA Palate Twin)</span>
                           </p>
-                          <p className="text-sm font-semibold text-slate-200 mt-1">{ally.other}</p>
+                          <p className="text-sm font-semibold text-slate-100 mt-1">{ally.other}</p>
                           <p className="text-[11px] text-slate-500">{pct(ally.share)} agreement over {ally.shared} shared calls</p>
                         </div>
                       )}
                       {rival && rival.other !== ally?.other && (
-                        <div className="rounded-xl border border-rose-900/40 bg-rose-950/20 p-3">
-                          <p className="text-[10px] uppercase tracking-widest text-rose-400 font-bold flex items-center gap-1.5 flex-wrap">
-                            <Swords className="w-3.5 h-3.5 shrink-0" /> Flavor foil <span className="text-rose-500 font-normal lowercase tracking-normal">(AKA Opposite Palate)</span>
+                        <div className="rounded-xl border border-rose-200 bg-rose-50/80 p-3 shadow-xs">
+                          <p className="text-[10px] uppercase tracking-widest text-rose-800 font-bold flex items-center gap-1.5 flex-wrap">
+                            <Swords className="w-3.5 h-3.5 shrink-0 text-rose-700" /> Flavor foil <span className="text-rose-700 font-normal lowercase tracking-normal">(AKA Opposite Palate)</span>
                           </p>
-                          <p className="text-sm font-semibold text-slate-200 mt-1">{rival.other}</p>
+                          <p className="text-sm font-semibold text-slate-100 mt-1">{rival.other}</p>
                           <p className="text-[11px] text-slate-500">{pct(rival.share)} agreement over {rival.shared} shared calls</p>
                         </div>
                       )}
@@ -505,14 +505,14 @@ export default function TasterProfiles({ voterName }: TasterProfilesProps) {
                     <div className="space-y-1.5 pt-1">
                       {agreements.map(a => (
                         <div key={a.other} className="flex items-center gap-3">
-                          <span className="w-20 shrink-0 text-xs text-slate-400 truncate">{a.other}</span>
+                          <span className="w-20 shrink-0 text-xs text-slate-400 font-medium truncate">{a.other}</span>
                           <div className="flex-1 h-2 rounded-full bg-slate-800 overflow-hidden">
                             <div
-                              className="h-full bg-gradient-to-r from-wine-700 to-wine-500"
+                              className="h-full bg-gradient-to-r from-[#821D35] to-[#B53856]"
                               style={{ width: pct(a.share) }}
                             />
                           </div>
-                          <span className="w-10 shrink-0 text-right text-xs font-bold text-slate-300">{pct(a.share)}</span>
+                          <span className="w-10 shrink-0 text-right text-xs font-bold text-slate-100 font-mono">{pct(a.share)}</span>
                         </div>
                       ))}
                     </div>

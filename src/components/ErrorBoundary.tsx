@@ -49,9 +49,9 @@ export class ErrorBoundary extends React.Component<Props, State> {
 
     return (
       <div className="min-h-screen flex items-center justify-center px-6 py-16">
-        <div className="glass-panel rounded-2xl p-8 max-w-md w-full space-y-6 text-center">
-          <div className="w-14 h-14 rounded-2xl bg-wine-900/60 border border-wine-800/50 flex items-center justify-center mx-auto">
-            <AlertCircle className="w-7 h-7 text-wine-300" />
+        <div className="glass-panel rounded-2xl p-8 max-w-md w-full space-y-6 text-center shadow-lg">
+          <div className="w-14 h-14 rounded-2xl bg-wine-900 border border-wine-700 flex items-center justify-center mx-auto shadow-xs">
+            <AlertCircle className="w-7 h-7 text-wine-200" />
           </div>
 
           <div className="space-y-2">
@@ -66,7 +66,7 @@ export class ErrorBoundary extends React.Component<Props, State> {
           </div>
 
           {this.state.message && (
-            <p className="text-xs font-mono text-slate-500 bg-slate-950/60 border border-slate-850 rounded-lg px-3 py-2 break-words">
+            <p className="text-xs font-mono text-slate-500 bg-white border border-slate-700 rounded-lg px-3 py-2 break-words">
               {this.state.message}
             </p>
           )}
@@ -74,14 +74,14 @@ export class ErrorBoundary extends React.Component<Props, State> {
           <div className="flex flex-col sm:flex-row gap-3 pt-1">
             <button
               onClick={this.handleReload}
-              className="flex-1 py-2.5 px-4 bg-wine-800 hover:bg-wine-700 text-white text-sm font-semibold rounded-lg transition-colors flex items-center justify-center gap-2"
+              className="flex-1 py-2.5 px-4 bg-[#6E172C] hover:bg-[#5A1425] text-white text-sm font-semibold rounded-lg transition-colors flex items-center justify-center gap-2 shadow-sm"
             >
               <RefreshCw className="w-4 h-4" />
               Reload
             </button>
             <button
               onClick={this.handleReturnToStart}
-              className="flex-1 py-2.5 px-4 bg-slate-900 border border-slate-800 hover:border-wine-800 hover:text-wine-200 text-slate-300 text-sm font-semibold rounded-lg transition-colors"
+              className="flex-1 py-2.5 px-4 bg-white border border-slate-700 hover:border-[#6E172C] hover:text-wine-200 text-slate-300 text-sm font-semibold rounded-lg transition-colors shadow-xs"
             >
               Return to start
             </button>

@@ -602,21 +602,21 @@ export default function App() {
           className="flex items-center gap-3 text-left focus:outline-none group cursor-pointer"
           title="Return to Home / Active Session"
         >
-          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-wine-800 to-wine-600 flex items-center justify-center shadow-lg shadow-wine-950/40 group-hover:scale-105 transition-transform">
+          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[#821D35] to-[#5A1425] flex items-center justify-center shadow-md shadow-wine-200/20 group-hover:scale-105 transition-transform">
             <WineIcon className="w-5.5 h-5.5 text-white" />
           </div>
           <div>
             <h1 className="text-lg font-extrabold font-serif tracking-tight text-wine-100 flex items-center gap-1.5 group-hover:text-wine-200 transition-colors">
               Grand Taste Tourney
             </h1>
-            <p className="text-[10px] text-slate-500 uppercase tracking-widest font-mono font-bold">
-              {supabase ? "Multiplayer Connected" : "Connection Pending (Check Settings)"}
+            <p className="text-[10px] text-slate-500 tracking-wider font-mono font-medium">
+              Blind Tasting Club • 0–100 Flight • {supabase ? "Multiplayer Connected" : "Connection Pending (Check Settings)"}
             </p>
           </div>
         </button>
 
         {/* Global User status info */}
-        <nav className="flex flex-wrap items-center bg-slate-950/60 p-1 border border-slate-850 rounded-xl text-xs font-semibold gap-1">
+        <nav className="flex flex-wrap items-center bg-slate-850/90 p-1 border border-slate-800 rounded-xl text-xs font-semibold gap-1 shadow-sm">
           {(!activeSession || activeSession.status === 'completed') && (
             <button
               onClick={() => {
@@ -627,8 +627,8 @@ export default function App() {
               }}
               className={`px-4 py-2 rounded-lg transition-colors flex items-center gap-1.5 ${
                 !activeSession && currentTab === 'intake'
-                  ? 'bg-wine-850 text-wine-200' 
-                  : 'text-slate-400 hover:text-slate-200'
+                  ? 'bg-white shadow-sm border border-slate-800 text-wine-200 font-bold' 
+                  : 'text-slate-400 hover:text-slate-200 hover:bg-slate-850/60'
               }`}
             >
               <PlusCircle className="w-4 h-4 text-wine-400" /> New Session
@@ -642,8 +642,8 @@ export default function App() {
                 disabled={activeSession.status !== 'setup'}
                 className={`px-4 py-2 rounded-lg transition-colors flex items-center gap-1.5 ${
                   currentTab === 'intake'
-                    ? 'bg-wine-850 text-wine-200' 
-                    : 'text-slate-400 hover:text-slate-200 disabled:opacity-30 disabled:pointer-events-none'
+                    ? 'bg-white shadow-sm border border-slate-800 text-wine-200 font-bold' 
+                    : 'text-slate-400 hover:text-slate-200 hover:bg-slate-850/60 disabled:opacity-30 disabled:pointer-events-none'
                 }`}
               >
                 <ClipboardList className="w-4 h-4" /> Register ({wines.length})
@@ -654,8 +654,8 @@ export default function App() {
                 disabled={activeSession.status === 'setup'}
                 className={`px-4 py-2 rounded-lg transition-colors flex items-center gap-1.5 ${
                   currentTab === 'tasting'
-                    ? 'bg-wine-850 text-wine-200 font-bold shadow-md shadow-wine-950/20' 
-                    : 'text-slate-400 hover:text-slate-200 disabled:opacity-30 disabled:pointer-events-none'
+                    ? 'bg-white shadow-sm border border-slate-800 text-wine-200 font-bold' 
+                    : 'text-slate-400 hover:text-slate-200 hover:bg-slate-850/60 disabled:opacity-30 disabled:pointer-events-none'
                 }`}
               >
                 <FileText className="w-4 h-4 text-wine-400" /> Tasting Sheet
@@ -666,8 +666,8 @@ export default function App() {
                 disabled={activeSession.status === 'setup'}
                 className={`px-4 py-2 rounded-lg transition-colors flex items-center gap-1.5 ${
                   currentTab === 'dashboard'
-                    ? 'bg-wine-850 text-wine-200 font-bold shadow-md shadow-wine-950/20' 
-                    : 'text-slate-400 hover:text-slate-200 disabled:opacity-30 disabled:pointer-events-none'
+                    ? 'bg-white shadow-sm border border-slate-800 text-wine-200 font-bold' 
+                    : 'text-slate-400 hover:text-slate-200 hover:bg-slate-850/60 disabled:opacity-30 disabled:pointer-events-none'
                 }`}
               >
                 <Trophy className="w-4 h-4 text-gold-400" /> Standings & Stats
@@ -679,8 +679,8 @@ export default function App() {
             onClick={() => setCurrentTab('history')}
             className={`px-4 py-2 rounded-lg transition-colors flex items-center gap-1.5 ${
               currentTab === 'history'
-                ? 'bg-wine-850 text-wine-200' 
-                : 'text-slate-400 hover:text-slate-200'
+                ? 'bg-white shadow-sm border border-slate-800 text-wine-200 font-bold' 
+                : 'text-slate-400 hover:text-slate-200 hover:bg-slate-850/60'
             }`}
           >
             <HistoryIcon className="w-4 h-4" /> History
@@ -690,8 +690,8 @@ export default function App() {
             onClick={() => setCurrentTab('palate')}
             className={`px-4 py-2 rounded-lg transition-colors flex items-center gap-1.5 ${
               currentTab === 'palate'
-                ? 'bg-wine-850 text-wine-200'
-                : 'text-slate-400 hover:text-slate-200'
+                ? 'bg-white shadow-sm border border-slate-800 text-wine-200 font-bold'
+                : 'text-slate-400 hover:text-slate-200 hover:bg-slate-850/60'
             }`}
           >
             <Users className="w-4 h-4" /> Palate
@@ -701,8 +701,8 @@ export default function App() {
             onClick={() => setCurrentTab('cellar')}
             className={`px-4 py-2 rounded-lg transition-colors flex items-center gap-1.5 ${
               currentTab === 'cellar'
-                ? 'bg-wine-850 text-wine-200'
-                : 'text-slate-400 hover:text-slate-200'
+                ? 'bg-white shadow-sm border border-slate-800 text-wine-200 font-bold'
+                : 'text-slate-400 hover:text-slate-200 hover:bg-slate-850/60'
             }`}
           >
             <Star className="w-4 h-4" /> Cellar
@@ -712,8 +712,8 @@ export default function App() {
             onClick={() => setCurrentTab('settings')}
             className={`px-4 py-2 rounded-lg transition-colors flex items-center gap-1.5 ${
               currentTab === 'settings'
-                ? 'bg-wine-850 text-wine-200' 
-                : 'text-slate-400 hover:text-slate-200'
+                ? 'bg-white shadow-sm border border-slate-800 text-wine-200 font-bold' 
+                : 'text-slate-400 hover:text-slate-200 hover:bg-slate-850/60'
             }`}
           >
             <SettingsIcon className="w-4 h-4" /> Settings
@@ -748,7 +748,7 @@ export default function App() {
           /* Session Initialization Screen */
           <div className="max-w-md mx-auto py-24 space-y-8 animate-scale-in">
             <div className="text-center space-y-3">
-              <WineIcon className="w-16 h-16 text-wine-400 mx-auto drop-shadow-[0_0_15px_rgba(135,28,54,0.3)] animate-pulse" />
+              <WineIcon className="w-16 h-16 text-wine-400 mx-auto drop-shadow-[0_4px_12px_rgba(110,23,44,0.15)] animate-pulse" />
               <h2 className="text-3xl font-bold font-serif text-slate-100">Initialize Tasting Session</h2>
               <p className="text-sm text-slate-400">
                 Ready to taste? Start a session to invite participants and log wines.
@@ -767,7 +767,7 @@ export default function App() {
                     placeholder="e.g. Fifty Shades of Grigio"
                     value={newSessionName}
                     onChange={(e) => setNewSessionName(e.target.value)}
-                    className="w-full px-3 py-2 bg-slate-950 border border-slate-800 focus:border-wine-500 rounded-lg text-slate-200 text-sm focus:outline-none focus:ring-1 focus:ring-wine-500 font-semibold"
+                    className="w-full px-3 py-2 bg-white border border-slate-700 focus:border-[#821D35] rounded-lg text-slate-100 placeholder:text-slate-500 text-sm focus:outline-none focus:ring-1 focus:ring-[#821D35] font-semibold"
                   />
                 </div>
 
@@ -780,20 +780,20 @@ export default function App() {
                     required
                     value={newSessionDate}
                     onChange={(e) => setNewSessionDate(e.target.value)}
-                    className="w-full px-3 py-2 bg-slate-950 border border-slate-800 focus:border-wine-500 rounded-lg text-slate-200 text-sm focus:outline-none focus:ring-1 focus:ring-wine-500 font-semibold font-mono"
+                    className="w-full px-3 py-2 bg-white border border-slate-700 focus:border-[#821D35] rounded-lg text-slate-100 placeholder:text-slate-500 text-sm focus:outline-none focus:ring-1 focus:ring-[#821D35] font-semibold font-mono"
                   />
                 </div>
 
                 {!voterName && (
-                  <div className="bg-amber-950/20 border border-amber-900/30 rounded-xl p-3.5 flex items-start gap-2.5 text-xs text-amber-300">
-                    <AlertCircle className="w-4 h-4 shrink-0 text-amber-400" />
+                  <div className="bg-amber-50 border border-amber-300 rounded-xl p-3.5 flex items-start gap-2.5 text-xs text-amber-900 shadow-sm">
+                    <AlertCircle className="w-4 h-4 shrink-0 text-amber-700 mt-0.5" />
                     <div className="space-y-1">
-                      <p className="font-semibold mb-0.5">Profile Name Required</p>
-                      <p className="text-slate-400">Set your name in settings first so the app can register your wine contributions.</p>
+                      <p className="font-semibold mb-0.5 text-amber-900">Profile Name Required</p>
+                      <p className="text-amber-800">Set your name in settings first so the app can register your wine contributions.</p>
                       <button
                         type="button"
                         onClick={() => setCurrentTab('settings')}
-                        className="text-amber-400 font-bold hover:underline block text-left"
+                        className="text-amber-900 font-bold hover:underline block text-left"
                       >
                         Go to Settings &rarr;
                       </button>
@@ -804,7 +804,7 @@ export default function App() {
                 <button
                   type="submit"
                   disabled={creatingSession || !voterName}
-                  className="w-full py-2.5 px-4 bg-gradient-to-r from-wine-800 to-wine-600 hover:from-wine-700 hover:to-wine-500 disabled:from-slate-800 disabled:to-slate-900 disabled:text-slate-600 disabled:font-medium text-white font-bold rounded-lg text-sm transition-all flex items-center justify-center gap-2 shadow-lg shadow-wine-950/20"
+                  className="w-full py-2.5 px-4 bg-gradient-to-r from-[#821D35] to-[#5A1425] hover:from-[#6E172C] hover:to-[#3D0C17] disabled:from-slate-800 disabled:to-slate-850 disabled:text-slate-500 text-white font-bold rounded-lg text-sm transition-all flex items-center justify-center gap-2 shadow-sm"
                 >
                   <PlusCircle className="w-4 h-4" /> {creatingSession ? "Creating..." : "Initialize Session"}
                 </button>
