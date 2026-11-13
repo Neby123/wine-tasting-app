@@ -412,7 +412,7 @@ export default function Dashboard({
                   <div className="space-y-1">
                     <h3 className="text-2xl font-bold font-serif text-slate-200">Tasting In Progress!</h3>
                     <p className="text-sm text-slate-400 max-w-sm mx-auto">
-                      Fill in your preference sliders on the Tasting Sheet tab. When everyone finishes, the Host will unbag and reveal the wines!
+                      Fill in your 0–100 ratings on the Tasting Sheet tab. When everyone finishes, the Host will unbag and reveal the wines!
                     </p>
                   </div>
                 </div>

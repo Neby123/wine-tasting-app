@@ -384,11 +384,11 @@ export default function TastingSheet({
                     </div>
                   </div>
 
-                  {/* METRIC 3: 3-PILLAR SENSORY DNA (OPTIONAL SMOOTH SLIDERS) */}
+                  {/* METRIC 3: 3-PILLAR SENSORY DNA (OPTIONAL 1-5 PICKERS) */}
                   <div className="space-y-3 pt-2 border-t border-slate-850 text-left">
                     <div className="flex justify-between items-center">
                       <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1">
-                        <Sliders className="w-3 h-3 text-wine-400" /> Sensory DNA (Optional Sliders)
+                        <Sliders className="w-3 h-3 text-wine-400" /> Sensory DNA (Optional)
                       </label>
                       <span className="text-[10px] text-slate-500">1 to 5</span>
                     </div>
