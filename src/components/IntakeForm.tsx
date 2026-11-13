@@ -12,6 +12,8 @@ interface IntakeFormProps {
   onDeleteWine: (id: string) => Promise<void>;
   onUpdateWine?: (id: string, updates: Omit<Partial<Omit<Wine, 'id' | 'session_id'>>, 'vintage'> & { vintage?: string | null }) => Promise<void>;
   onStartTasting: () => Promise<void>;
+  sessionName?: string;
+  sessionDate?: string;
 }
 
 const STYLE_OPTIONS = [
@@ -34,7 +36,9 @@ export default function IntakeForm({
   onAddWinesBatch,
   onDeleteWine,
   onUpdateWine,
-  onStartTasting
+  onStartTasting,
+  sessionName,
+  sessionDate
 }: IntakeFormProps) {
   const [submittedBy, setSubmittedBy] = useState(voterName || '');
   const [wineName, setWineName] = useState('');
@@ -239,6 +243,13 @@ export default function IntakeForm({
   return (
     <div className="space-y-8 animate-fade-in">
       <div className="text-center max-w-xl mx-auto space-y-2">
+        {sessionName && (
+          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-wine-900 border border-wine-700 text-wine-200 text-xs font-semibold">
+            <WineIcon className="w-3.5 h-3.5 text-[#6E172C]" />
+            <span>{sessionName}</span>
+            {sessionDate && <span className="text-slate-500 font-mono">• {sessionDate}</span>}
+          </div>
+        )}
         <h2 className="text-3xl font-bold font-serif text-wine-100">Wine Registry</h2>
         <p className="text-slate-400 text-sm">
           Every participant logs their bottle details below. Wine details are kept hidden from other tasters to preserve the blind taste test!

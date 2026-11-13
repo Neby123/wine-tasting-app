@@ -274,7 +274,7 @@ export default function Dashboard({
             <span className="text-xs bg-wine-950 text-[#6E172C] border border-wine-800/80 font-bold uppercase tracking-wider px-2.5 py-0.5 rounded-full">
               {session.status === 'setup' ? 'Setup Mode' : session.status === 'tasting' ? 'Tasting In Progress' : 'Completed'}
             </span>
-            <span className="text-slate-500 font-mono text-xs">{session.date}</span>
+            <span className="text-slate-500 font-mono text-xs">{(session.date || '').split('T')[0]}</span>
           </div>
           <h2 className="text-2xl sm:text-3xl font-bold font-serif text-slate-100">{session.name}</h2>
         </div>

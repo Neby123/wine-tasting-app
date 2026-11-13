@@ -19,6 +19,8 @@ interface TastingSheetProps {
     }
   ) => Promise<void>;
   onUpdateVoterName?: (name: string) => void;
+  sessionName?: string;
+  sessionDate?: string;
 }
 
 const QUICK_TASTERS = ['Ben', 'Monica', 'Jack', 'Alexcia', 'David', 'Abby'];
@@ -41,7 +43,9 @@ export default function TastingSheet({
   voterName,
   votes,
   onSubmitStandaloneRating,
-  onUpdateVoterName
+  onUpdateVoterName,
+  sessionName,
+  sessionDate
 }: TastingSheetProps) {
   // Track which wine card accordions are expanded (default: ALL COLLAPSED)
   const [expandedLabels, setExpandedLabels] = useState<Record<string, boolean>>({});
@@ -180,7 +184,12 @@ export default function TastingSheet({
             </button>
           )}
         </div>
-        <h2 className="text-2xl font-bold font-serif text-slate-100">Blind Tasting Sheet</h2>
+        <p className="text-[11px] font-mono font-semibold uppercase tracking-widest text-wine-300">
+          Blind Tasting Sheet{sessionDate ? ` • ${sessionDate}` : ''}
+        </p>
+        <h2 className="text-2xl sm:text-3xl font-bold font-serif text-slate-100">
+          {sessionName || 'Blind Tasting Sheet'}
+        </h2>
         <p className="text-xs text-slate-400 max-w-md mx-auto">
           Taste at your own pace. Expand any wine card below to log your rating and notes.
         </p>

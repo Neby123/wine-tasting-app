@@ -606,8 +606,13 @@ export default function App() {
             <WineIcon className="w-5.5 h-5.5 text-white" />
           </div>
           <div>
-            <h1 className="text-lg font-extrabold font-serif tracking-tight text-wine-100 flex items-center gap-1.5 group-hover:text-wine-200 transition-colors">
-              Grand Taste Tourney
+            <h1 className="text-lg font-extrabold font-serif tracking-tight text-wine-100 flex items-center gap-2 flex-wrap group-hover:text-wine-200 transition-colors">
+              <span>Grand Taste Tourney</span>
+              {activeSession && (
+                <span className="text-[11px] font-sans font-bold px-2.5 py-0.5 rounded-full bg-wine-900 border border-wine-700 text-wine-200 tracking-normal">
+                  {activeSession.name}
+                </span>
+              )}
             </h1>
             <p className="text-[10px] text-slate-500 tracking-wider font-mono font-medium">
               Blind Tasting Club • 0–100 Flight • {supabase ? "Multiplayer Connected" : "Connection Pending (Check Settings)"}
@@ -829,6 +834,8 @@ export default function App() {
                 wines={wines}
                 voterName={voterName}
                 isHost={isHost}
+                sessionName={activeSession.name}
+                sessionDate={(activeSession.date || '').split('T')[0]}
                 onAddWine={handleAddWine}
                 onAddWinesBatch={handleAddWinesBatch}
                 onDeleteWine={handleDeleteWine}
@@ -842,6 +849,8 @@ export default function App() {
                 wines={wines}
                 voterName={voterName}
                 votes={votes}
+                sessionName={activeSession.name}
+                sessionDate={(activeSession.date || '').split('T')[0]}
                 onSubmitStandaloneRating={handleSubmitStandaloneRating}
                 onUpdateVoterName={handleUpdateVoterName}
               />
