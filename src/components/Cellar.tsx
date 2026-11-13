@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { HistoricalTasting, WishlistItem } from '../utils/mockData';
 import { db } from '../utils/supabase';
 import {
@@ -28,6 +28,7 @@ export default function Cellar({ voterName }: CellarProps) {
   const [loading, setLoading] = useState(true);
   const [query, setQuery] = useState('');
   const [busy, setBusy] = useState(false);
+  const loadSeqRef = useRef(0);
 
   // Manual add form
   const [mName, setMName] = useState('');
@@ -36,29 +37,48 @@ export default function Cellar({ voterName }: CellarProps) {
   const [mNote, setMNote] = useState('');
 
   const load = async () => {
+    const seq = ++loadSeqRef.current;
     setLoading(true);
     try {
-      const cleanName = voterName.trim();
-      try {
-        localStorage.removeItem(`WINE_TASTING_WISHLIST_${(cleanName || 'guest').toLowerCase()}`);
-      } catch {
-        // Ignore storage cleanup error
-      }
+      const cleanName = (voterName || '').trim();
+      let wishlistLoaded = false;
 
       const [dbItems, h] = await Promise.all([
-        cleanName ? db.getWishlist(cleanName) : Promise.resolve([]),
+        cleanName
+          ? db.getWishlist(cleanName).then(items => {
+              wishlistLoaded = true;
+              return items;
+            }).catch(err => {
+              console.warn('DB wishlist load error:', err);
+              return [] as WishlistItem[];
+            })
+          : Promise.resolve([] as WishlistItem[]),
         db.getHistory().catch(err => {
           console.warn('DB history load error:', err);
           return [] as HistoricalTasting[];
         })
       ]);
 
+      if (seq !== loadSeqRef.current) return;
+
+      if (wishlistLoaded && cleanName) {
+        try {
+          localStorage.removeItem(`WINE_TASTING_WISHLIST_${cleanName.toLowerCase()}`);
+        } catch {
+          // Ignore storage cleanup error
+        }
+      }
+
       setHistory(h);
       setWishlist(dbItems);
     } catch (err) {
-      console.error('Error loading cellar:', err);
+      if (seq === loadSeqRef.current) {
+        console.error('Error loading cellar:', err);
+      }
     } finally {
-      setLoading(false);
+      if (seq === loadSeqRef.current) {
+        setLoading(false);
+      }
     }
   };
 
@@ -103,7 +123,7 @@ export default function Cellar({ voterName }: CellarProps) {
   );
 
   const addFromSearch = async (row: SearchRow) => {
-    const cleanName = voterName.trim();
+    const cleanName = (voterName || '').trim();
     if (!cleanName || busy) return;
     setBusy(true);
 
@@ -116,6 +136,9 @@ export default function Cellar({ voterName }: CellarProps) {
         price: row.price,
         source_history_id: row.historyId
       });
+      if (!dbItem || !dbItem.id) {
+        throw new Error('Wishlist save returned empty record');
+      }
       setWishlist(prev => [
         dbItem,
         ...prev.filter(w => w.wine_name.toLowerCase() !== row.name.toLowerCase())
@@ -129,7 +152,7 @@ export default function Cellar({ voterName }: CellarProps) {
   };
 
   const addManual = async () => {
-    const cleanName = voterName.trim();
+    const cleanName = (voterName || '').trim();
     if (!cleanName || !mName.trim() || busy) return;
     setBusy(true);
 
@@ -142,6 +165,9 @@ export default function Cellar({ voterName }: CellarProps) {
         price: isNaN(priceNum) ? undefined : priceNum,
         note: mNote.trim() || undefined
       });
+      if (!dbItem || !dbItem.id) {
+        throw new Error('Wishlist save returned empty record');
+      }
       setWishlist(prev => [dbItem, ...prev]);
       setMName(''); setMProducer(''); setMPrice(''); setMNote('');
     } catch (err) {

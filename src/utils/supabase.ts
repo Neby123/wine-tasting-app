@@ -469,8 +469,10 @@ export const db = {
         .select(WISHLIST_PUBLIC_COLUMNS)
         .order('created_at', { ascending: false });
 
-      if (voterName && voterName.trim()) {
-        query = query.ilike('voter_name', voterName.trim());
+      const cleanVoter = (voterName || '').trim();
+      if (cleanVoter) {
+        const escaped = cleanVoter.replace(/[\\%_]/g, ch => `\\${ch}`);
+        query = query.ilike('voter_name', escaped);
       }
 
       const { data, error } = await query;
@@ -478,7 +480,10 @@ export const db = {
         console.warn("getWishlist query error, returning empty array:", error);
         return [];
       }
-      return (data || []) as WishlistItem[];
+      const rows = (data || []) as WishlistItem[];
+      return cleanVoter
+        ? rows.filter(r => (r.voter_name || '').trim().toLowerCase() === cleanVoter.toLowerCase())
+        : rows;
     } catch (err) {
       console.warn("getWishlist caught error, returning empty array:", err);
       return [];

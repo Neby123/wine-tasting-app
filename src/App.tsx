@@ -35,7 +35,10 @@ export default function App() {
   
   // New session input
   const [newSessionName, setNewSessionName] = useState('');
-  const [newSessionDate, setNewSessionDate] = useState(() => new Date().toISOString().split('T')[0]);
+  const [newSessionDate, setNewSessionDate] = useState(() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  });
   const [creatingSession, setCreatingSession] = useState(false);
 
   const loadSeqRef = React.useRef(0);
@@ -70,15 +73,28 @@ export default function App() {
     }
   };
 
-  // Initial load & cleanup of legacy mock/local history keys
+  // Initial load & verified cleanup of legacy local/mock keys
   useEffect(() => {
     loadData();
-    try {
-      localStorage.removeItem('WINE_TASTING_HISTORY');
-      localStorage.removeItem('WINE_TASTING_MOCK_HISTORY');
-    } catch {
-      // Ignore storage access errors
-    }
+    const cleanupLegacyStorage = async () => {
+      if (!supabase) return;
+      try {
+        const { data: existingRows, error } = await supabase.from('history').select('id');
+        if (error) return;
+        localStorage.removeItem('WINE_TASTING_MOCK_HISTORY');
+        const rawHistory = localStorage.getItem('WINE_TASTING_HISTORY');
+        if (rawHistory) {
+          const parsed = JSON.parse(rawHistory);
+          const existingIds = new Set((existingRows || []).map(r => r.id));
+          if (!Array.isArray(parsed) || parsed.every((s: any) => s?.id && existingIds.has(s.id))) {
+            localStorage.removeItem('WINE_TASTING_HISTORY');
+          }
+        }
+      } catch {
+        // Leave local storage untouched if verification fails
+      }
+    };
+    cleanupLegacyStorage();
   }, []);
 
   // Reflect the active tab into the URL hash. Guarded on difference so this
@@ -440,37 +456,42 @@ export default function App() {
 
       // 5. Sync buy-again intents to Supabase ONLY for current device owner
       // so another voter's wishlist entries are never stamped with the host's voter_token.
-      const actingVoterLower = voterName.trim().toLowerCase();
-      const existingCloudWishlist = actingVoterLower
-        ? await db.getWishlist(voterName.trim()).catch(() => [])
-        : [];
-      const cloudWishKeys = new Set(
-        existingCloudWishlist.map(w => `${(w.voter_name || '').trim().toLowerCase()}::${(w.wine_name || '').trim().toLowerCase()}`)
-      );
+      try {
+        const actingVoterLower = (voterName || '').trim().toLowerCase();
+        const existingCloudWishlist = actingVoterLower
+          ? await db.getWishlist(voterName.trim()).catch(() => [])
+          : [];
+        const cloudWishKeys = new Set(
+          existingCloudWishlist.map(w => `${(w.voter_name || '').trim().toLowerCase()}::${(w.wine_name || '').trim().toLowerCase()}`)
+        );
 
-      for (const v of sourceVotes) {
-        if (v.buy_again_1 !== 'yes' || !v.voter_name) continue;
-        const matchedWine = updatedWines.find(w => w.blind_label === v.wine_1_label);
-        if (!matchedWine) continue;
-        const voterClean = v.voter_name.trim();
-        const wishKey = `${voterClean.toLowerCase()}::${matchedWine.name.trim().toLowerCase()}`;
-        if (actingVoterLower && voterClean.toLowerCase() === actingVoterLower && !cloudWishKeys.has(wishKey)) {
-          cloudWishKeys.add(wishKey);
-          await db.addWishlistItem({
-            voter_name: voterClean,
-            wine_name: matchedWine.name,
-            producer: matchedWine.producer,
-            vintage: matchedWine.vintage,
-            varietal: matchedWine.varietal,
-            region: matchedWine.region,
-            price: matchedWine.price,
-            source_session_id: activeSession.id,
-            source_history_id: report.id,
-            note: v.notes_wine_1 || undefined
-          }).catch((wishErr) => {
-            console.warn('Cloud wishlist sync skipped:', wishErr);
-          });
+        for (const v of sourceVotes) {
+          if (v.buy_again_1 !== 'yes' || !v.voter_name) continue;
+          const matchedWine = updatedWines.find(w => w.blind_label === v.wine_1_label);
+          if (!matchedWine) continue;
+          const voterClean = (v.voter_name || '').trim();
+          if (!voterClean) continue;
+          const wishKey = `${voterClean.toLowerCase()}::${matchedWine.name.trim().toLowerCase()}`;
+          if (actingVoterLower && voterClean.toLowerCase() === actingVoterLower && !cloudWishKeys.has(wishKey)) {
+            cloudWishKeys.add(wishKey);
+            await db.addWishlistItem({
+              voter_name: voterClean,
+              wine_name: matchedWine.name,
+              producer: matchedWine.producer,
+              vintage: matchedWine.vintage,
+              varietal: matchedWine.varietal,
+              region: matchedWine.region,
+              price: matchedWine.price,
+              source_session_id: activeSession.id,
+              source_history_id: report.id,
+              note: v.notes_wine_1 || undefined
+            }).catch((wishErr) => {
+              console.warn('Cloud wishlist sync skipped:', wishErr);
+            });
+          }
         }
+      } catch {
+        // Best-effort wishlist sync should never block reveal
       }
 
       setWines(updatedWines);
