@@ -337,23 +337,9 @@ export const db = {
     const client = ensureClient();
     const dbPayload = serializeVoteForDb(vote);
 
-    // Atomic upsert keyed on unique constraint (session_id, voter_name, match_id)
-    const { data: upserted, error: upsertErr } = await client
-      .from('votes')
-      .upsert(dbPayload, { onConflict: 'session_id,voter_name,match_id' })
-      .select(VOTE_PUBLIC_COLUMNS)
-      .single();
-
-    if (!upsertErr && upserted) {
-      return hydrateVoteFromDb(upserted);
-    }
-
-    // Only fall back when the live table lacks the unique constraint (SQLSTATE 42P10)
-    const errCode = (upsertErr as any)?.code;
-    if (upsertErr && errCode !== '42P10') {
-      throw upsertErr;
-    }
-
+    // Note: Do not use PostgREST `.upsert()` (`ON CONFLICT DO UPDATE`) here because
+    // column-level `SELECT` grants on `public.votes` (which hide `voter_token`) trigger
+    // SQLSTATE 42501 (`permission denied for table votes`) on ON CONFLICT checks.
     const { data: existing, error: existErr } = await client
       .from('votes')
       .select('id')
