@@ -151,6 +151,217 @@ function Assert-SecretScan([string]$DirectoryPath) {
     }
 }
 
+function Read-DotEnvMap([string]$EnvPath, [string]$ProjectRootCanonical) {
+    $Map = @{}
+    if (-not (Test-Path -LiteralPath $EnvPath)) { return $Map }
+    [PathSecurity]::AssertNotReparsePoint($EnvPath, $ProjectRootCanonical)
+    Get-Content -LiteralPath $EnvPath | ForEach-Object {
+        $Line = ($_.Trim() -replace '^(?i)export\s+', '').Trim()
+        if ($Line -and -not $Line.StartsWith('#') -and $Line.Contains('=')) {
+            $k, $v = ($Line -split '=', 2).Trim()
+            $Map[$k] = $v.Trim('"').Trim("'")
+        }
+    }
+    return $Map
+}
+
+function Resolve-SmokeSupabaseConfig([string]$ProjectDir, [string]$ProjectRootCanonical) {
+    $DotEnv = Read-DotEnvMap (Join-Path $ProjectDir ".env") $ProjectRootCanonical
+    $DotEnvLocal = Read-DotEnvMap (Join-Path $ProjectDir ".env.local") $ProjectRootCanonical
+
+    $Url = $env:VITE_SUPABASE_URL
+    if (-not $Url) { $Url = $DotEnvLocal['VITE_SUPABASE_URL'] }
+    if (-not $Url) { $Url = $DotEnv['VITE_SUPABASE_URL'] }
+    if (-not $Url) { $Url = "https://rprjfaxsmwdzqwzycujh.supabase.co" }
+    $Url = $Url.Trim().TrimEnd('/')
+
+    $AnonKey = $env:VITE_SUPABASE_ANON_KEY
+    if (-not $AnonKey) { $AnonKey = $DotEnvLocal['VITE_SUPABASE_ANON_KEY'] }
+    if (-not $AnonKey) { $AnonKey = $DotEnv['VITE_SUPABASE_ANON_KEY'] }
+    if ($AnonKey) { $AnonKey = $AnonKey.Trim() }
+
+    if (-not $AnonKey) {
+        throw "Live Supabase smoke test requires VITE_SUPABASE_ANON_KEY (via env var, .env.local, or .env)."
+    }
+    if ($Url -notmatch '\Ahttps:\/\/[A-Za-z0-9._-]+\.supabase\.co\z') {
+        throw "Invalid Supabase URL for live smoke test: $Url"
+    }
+    if ($AnonKey -match '(?i)(sb_secret_|service_role|master_key)') {
+        throw "Refusing to run smoke test with privileged key."
+    }
+    if (-not ($AnonKey.StartsWith("sb_publishable_") -or (Test-AnonJwt $AnonKey))) {
+        throw "Invalid VITE_SUPABASE_ANON_KEY format or non-anon JWT role."
+    }
+    return @{ Url = $Url; AnonKey = $AnonKey }
+}
+
+function Get-HttpErrorDetail($ErrorRecord) {
+    $Detail = $ErrorRecord.Exception.Message
+    try {
+        $Resp = $ErrorRecord.Exception.Response
+        if ($Resp) {
+            $Stream = $Resp.GetResponseStream()
+            if ($Stream) {
+                $Reader = New-Object System.IO.StreamReader($Stream)
+                $Body = $Reader.ReadToEnd()
+                $Reader.Dispose()
+                if ($Body) { $Detail = "$Detail | Response: $Body" }
+            }
+        }
+    } catch { }
+    return $Detail
+}
+
+function Get-SupabaseRows([string]$Uri, [hashtable]$Headers) {
+    $Raw = Invoke-RestMethod -Method Get -Uri $Uri -Headers $Headers -TimeoutSec 15
+    $List = New-Object System.Collections.ArrayList
+    if ($null -eq $Raw) { return ,$List.ToArray() }
+    foreach ($Item in $Raw) {
+        if ($null -ne $Item -and $null -ne $Item.id) { [void]$List.Add($Item) }
+    }
+    return ,$List.ToArray()
+}
+
+function Invoke-LiveVoteSmokeTest {
+    param(
+        [Parameter(Mandatory = $true)][string]$Url,
+        [Parameter(Mandatory = $true)][string]$AnonKey
+    )
+
+    [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
+    $RestBase = "$Url/rest/v1"
+    $VoterToken = [guid]::NewGuid().ToString()
+    $SmokeTag = [guid]::NewGuid().ToString("N").Substring(0, 12)
+    $SmokeVoter = "__smoke_test__$SmokeTag"
+    $SmokeMatch = "STANDALONE_SMOKE_$SmokeTag"
+    $VotePublicColumns = "id,session_id,voter_name,match_id,wine_1_label,wine_2_label,slider_value,notes_wine_1,notes_wine_2,created_at"
+
+    $BaseHeaders = @{
+        "apikey"        = $AnonKey
+        "x-voter-token" = $VoterToken
+        "Content-Type"  = "application/json"
+        "Accept"        = "application/json"
+    }
+    if (-not $AnonKey.StartsWith("sb_publishable_")) {
+        $BaseHeaders["Authorization"] = "Bearer $AnonKey"
+    }
+
+    $WriteHeaders = @{} + $BaseHeaders
+    $WriteHeaders["Prefer"] = "return=representation"
+    $WriteHeaders["Accept"] = "application/vnd.pgrst.object+json"
+
+    try {
+        $Sessions = Get-SupabaseRows "$RestBase/sessions?select=id&order=created_at.desc&limit=1" $BaseHeaders
+    } catch {
+        throw "Live smoke test failed fetching active/latest session: $(Get-HttpErrorDetail $_)"
+    }
+    if ($Sessions.Count -eq 0 -or -not $Sessions[0].id) {
+        throw "Live smoke test failed: no row found in public.sessions."
+    }
+    $SessionId = [string]$Sessions[0].id
+
+    $LookupUri = "$RestBase/votes?select=id&session_id=eq.$([uri]::EscapeDataString($SessionId))&voter_name=eq.$([uri]::EscapeDataString($SmokeVoter))&match_id=eq.$([uri]::EscapeDataString($SmokeMatch))"
+    $EscapedCols = [uri]::EscapeDataString($VotePublicColumns)
+    $MetaJson = (@{
+        __v               = 1
+        perceived_price_1 = "10-20"
+        buy_again_1       = "yes"
+        acidity_1         = 3
+        body_1            = 3
+        sweetness_1       = 2
+    } | ConvertTo-Json -Compress)
+
+    $InsertedVoteId = $null
+    $CleanedUp = $false
+    try {
+        # 1. Exact db.submitVote pre-lookup (SELECT id)
+        try {
+            $PreLookup = Get-SupabaseRows $LookupUri $BaseHeaders
+        } catch {
+            throw "Smoke vote SELECT id pre-check failed: $(Get-HttpErrorDetail $_)"
+        }
+        if ($PreLookup.Count -ne 0) {
+            throw "Smoke vote pre-check expected 0 rows, found $($PreLookup.Count)."
+        }
+
+        # 2. Exact db.submitVote INSERT path with column-level SELECT projection
+        $InsertBody = @{
+            session_id   = $SessionId
+            voter_name   = $SmokeVoter
+            match_id     = $SmokeMatch
+            wine_1_label = "Wine A"
+            wine_2_label = "Wine A"
+            slider_value = 80
+            notes_wine_1 = "build-smoke-insert"
+            notes_wine_2 = $MetaJson
+            voter_token  = $VoterToken
+        } | ConvertTo-Json -Compress
+
+        try {
+            $Inserted = Invoke-RestMethod -Method Post -Uri "$RestBase/votes?select=$EscapedCols" -Headers $WriteHeaders -Body $InsertBody -TimeoutSec 15
+        } catch {
+            throw "Smoke vote INSERT failed: $(Get-HttpErrorDetail $_)"
+        }
+        if (-not $Inserted -or -not $Inserted.id -or [double]$Inserted.slider_value -ne 80) {
+            throw "Smoke vote INSERT returned invalid row payload."
+        }
+        $InsertedVoteId = [string]$Inserted.id
+
+        # 3. Exact db.submitVote re-lookup + UPDATE path
+        try {
+            $ExistingLookup = Get-SupabaseRows $LookupUri $BaseHeaders
+        } catch {
+            throw "Smoke vote SELECT id post-insert failed: $(Get-HttpErrorDetail $_)"
+        }
+        if ($ExistingLookup.Count -ne 1 -or [string]$ExistingLookup[0].id -ne $InsertedVoteId) {
+            throw "Smoke vote SELECT id post-insert did not return inserted id $InsertedVoteId."
+        }
+
+        $UpdateBody = @{
+            session_id   = $SessionId
+            voter_name   = $SmokeVoter
+            match_id     = $SmokeMatch
+            wine_1_label = "Wine A"
+            wine_2_label = "Wine A"
+            slider_value = 91
+            notes_wine_1 = "build-smoke-update"
+            notes_wine_2 = $MetaJson
+            voter_token  = $VoterToken
+        } | ConvertTo-Json -Compress
+
+        try {
+            $Updated = Invoke-RestMethod -Method Patch -Uri "$RestBase/votes?id=eq.$([uri]::EscapeDataString($InsertedVoteId))&select=$EscapedCols" -Headers $WriteHeaders -Body $UpdateBody -TimeoutSec 15
+        } catch {
+            throw "Smoke vote UPDATE failed: $(Get-HttpErrorDetail $_)"
+        }
+        if (-not $Updated -or [string]$Updated.id -ne $InsertedVoteId -or [double]$Updated.slider_value -ne 91 -or $Updated.notes_wine_1 -ne "build-smoke-update") {
+            throw "Smoke vote UPDATE did not persist expected values."
+        }
+
+        # 4. DELETE cleanup + verification
+        try {
+            Invoke-RestMethod -Method Delete -Uri "$RestBase/votes?id=eq.$([uri]::EscapeDataString($InsertedVoteId))" -Headers $BaseHeaders -TimeoutSec 15 | Out-Null
+            $CleanedUp = $true
+        } catch {
+            throw "Smoke vote DELETE failed: $(Get-HttpErrorDetail $_)"
+        }
+
+        $PostDelete = Get-SupabaseRows $LookupUri $BaseHeaders
+        if ($PostDelete.Count -ne 0) {
+            throw "Smoke vote DELETE left residual row in public.votes."
+        }
+        Write-Host "Live Supabase vote smoke test passed (SELECT -> INSERT -> UPDATE -> DELETE on id=$InsertedVoteId)." -ForegroundColor Green
+    } finally {
+        if ($InsertedVoteId -and -not $CleanedUp) {
+            try {
+                Invoke-RestMethod -Method Delete -Uri "$RestBase/votes?id=eq.$([uri]::EscapeDataString($InsertedVoteId))" -Headers $BaseHeaders -TimeoutSec 15 | Out-Null
+            } catch {
+                Write-Warning "Cleanup failed for smoke vote id=${InsertedVoteId}: $(Get-HttpErrorDetail $_)"
+            }
+        }
+    }
+}
+
 $UserIdent = [System.Security.Principal.WindowsIdentity]::GetCurrent(); $UserSid = $UserIdent.User.Value
 $ProjectHash = [System.BitConverter]::ToString([System.Security.Cryptography.SHA256]::Create().ComputeHash([System.Text.Encoding]::UTF8.GetBytes($ProjectDirCanonical.ToLowerInvariant()))).Replace("-", "").Substring(0, 16)
 $LockFilePath = Join-Path $env:TEMP "wine_tasting_build_${ProjectHash}_${UserSid}.lock"; $LockFile = $null
@@ -319,6 +530,8 @@ try {
     
     $PubDir = Join-Path $ProjectDir "public"; if (Test-Path -LiteralPath $PubDir) { Copy-SafeDirectory $PubDir (Join-Path $BuildDir "public") $ProjectDirCanonical $TempDirCanonical }
 
+    $SmokeConfig = Resolve-SmokeSupabaseConfig $ProjectDir $ProjectDirCanonical
+
     $SafeEnv = @('PATH','PATHEXT','SYSTEMROOT','TEMP','TMP','USERNAME','USERPROFILE','HOMEPATH','LOCALAPPDATA','APPDATA','COMPUTERNAME','OS','PROCESSOR_ARCHITECTURE','PSMODULEPATH','COMSPEC')
     Get-ChildItem env: | Where-Object { $_.Name -like 'VITE_*' -or ($_.Name -match '(?i)(TOKEN|SECRET|KEY|PASSWORD|CREDENTIAL|SESSION|AUTH)' -and $_.Name -notin $SafeEnv) } | ForEach-Object {
         $PreservedEnvVars[$_.Name] = $_.Value; Remove-Item -LiteralPath "env:$($_.Name)" -Force -ErrorAction SilentlyContinue
@@ -340,7 +553,10 @@ try {
 
     Set-Location $OriginalLocation
 
-    Write-Host "5. Publishing distribution..." -ForegroundColor Cyan
+    Write-Host "5. Running live Supabase vote smoke test (SELECT -> INSERT -> UPDATE -> DELETE)..." -ForegroundColor Cyan
+    Invoke-LiveVoteSmokeTest -Url $SmokeConfig.Url -AnonKey $SmokeConfig.AnonKey
+
+    Write-Host "6. Publishing distribution..." -ForegroundColor Cyan
     Copy-SafeDirectory $CompiledDist $TargetDist $TempDirCanonical $ProjectDirCanonical -Prune
     Assert-SecretScan $TargetDist
     if (-not (Test-Path -LiteralPath (Join-Path $TargetDist "index.html"))) { throw ("index.html not found in " + $TargetDist) }
@@ -351,7 +567,7 @@ try {
     $BuildSucceeded = $false
 } finally {
     Set-Location $OriginalLocation
-    Write-Host "6. Cleaning up..." -ForegroundColor Cyan
+    Write-Host "7. Cleaning up..." -ForegroundColor Cyan
     try { if ($BuildDir -and (Test-Path -LiteralPath $BuildDir)) { Remove-SafeFolder $BuildDir $TempDirCanonical @("wine-tasting-build-$ProjectHash-") } } catch { }
     try { if ($LockFile) { $LockFile.Close(); $LockFile.Dispose() } } catch { }
     try { if ($PreservedEnvVars) { foreach ($e in $PreservedEnvVars.GetEnumerator()) { Set-Item -LiteralPath "env:$($e.Key)" -Value $e.Value -ErrorAction SilentlyContinue } } } catch { }
