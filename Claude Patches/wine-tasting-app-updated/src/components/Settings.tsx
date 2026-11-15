@@ -21,7 +21,7 @@ export default function Settings({
   const [sbKey, setSbKey] = useState(() => localStorage.getItem('WINE_TASTING_SB_KEY') || '');
   const [savedMsg, setSavedMsg] = useState('');
   const [linkCopied, setLinkCopied] = useState(false);
-  const [hostPasscode, setHostPasscode] = useState(() => localStorage.getItem('WINE_TASTING_HOST_PASSCODE') || '');
+  const [hostPasscode, setHostPasscode] = useState(() => localStorage.getItem('WINE_TASTING_HOST_PASSCODE') || '1234');
   const [participants, setParticipants] = useState<string[]>(() => {
     const stored = localStorage.getItem('WINE_TASTING_PARTICIPANTS');
     if (stored) {
@@ -37,30 +37,36 @@ export default function Settings({
   const handleSaveProfile = (e: React.FormEvent) => {
     e.preventDefault();
     const trimmedName = name.trim();
-    if (!trimmedName) return;
+    if (!trimmedName && !isHost) return;
 
-    onUpdateVoterName(trimmedName);
+    if (trimmedName) {
+      onUpdateVoterName(trimmedName);
 
-    // Save name to participants list if it's new
-    if (!participants.includes(trimmedName)) {
-      const updated = [...participants, trimmedName];
-      setParticipants(updated);
-      localStorage.setItem('WINE_TASTING_PARTICIPANTS', JSON.stringify(updated));
+      // Save name to participants list if it's new
+      if (!participants.includes(trimmedName)) {
+        const updated = [...participants, trimmedName];
+        setParticipants(updated);
+        localStorage.setItem('WINE_TASTING_PARTICIPANTS', JSON.stringify(updated));
+      }
     }
 
-    // Save host passcode to localStorage
-    const oldPasscode = localStorage.getItem('WINE_TASTING_HOST_PASSCODE') || '';
-    const newPasscode = hostPasscode.trim();
+    // Save host passcode to localStorage (dynamicFetch reads it live on every request)
+    const newPasscode = hostPasscode.trim() || '1234';
+    if (!hostPasscode.trim()) setHostPasscode(newPasscode);
     localStorage.setItem('WINE_TASTING_HOST_PASSCODE', newPasscode);
 
-    if (oldPasscode !== newPasscode) {
-      setSavedMsg("Host passcode updated! Re-initializing connection...");
-      setTimeout(() => window.location.reload(), 1000);
-      return;
-    }
-
-    setSavedMsg("Profile updated successfully!");
+    setSavedMsg(trimmedName ? "Profile updated successfully!" : "Host passcode updated!");
     setTimeout(() => setSavedMsg(''), 2000);
+  };
+
+  const handleToggleHostMode = () => {
+    const nextHost = !isHost;
+    if (nextHost) {
+      const code = hostPasscode.trim() || localStorage.getItem('WINE_TASTING_HOST_PASSCODE') || '1234';
+      if (!hostPasscode.trim()) setHostPasscode(code);
+      localStorage.setItem('WINE_TASTING_HOST_PASSCODE', code);
+    }
+    onUpdateHostMode(nextHost);
   };
 
   const handleSaveDB = (e: React.FormEvent) => {
@@ -167,7 +173,7 @@ export default function Settings({
               </label>
               <input
                 type="text"
-                required
+                required={!isHost}
                 placeholder="e.g. Ben"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
@@ -187,7 +193,7 @@ export default function Settings({
             </div>
             <button
               type="button"
-              onClick={() => onUpdateHostMode(!isHost)}
+              onClick={handleToggleHostMode}
               className={`w-12 h-6 flex items-center rounded-full p-1 cursor-pointer transition-colors duration-300 ${
                 isHost ? 'bg-[#6E172C] justify-end' : 'bg-slate-700 justify-start'
               }`}

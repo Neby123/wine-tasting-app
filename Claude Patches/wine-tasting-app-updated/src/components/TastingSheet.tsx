@@ -145,16 +145,17 @@ export default function TastingSheet({
     }
   };
 
+  const bagLabels = Array.from({ length: wines.length || 6 }, (_, idx) => String.fromCharCode(65 + idx));
+
   // Calculate personal leaderboard from scores
-  const ratedWinesCount = wines.filter((w, idx) => {
-    const label = w.blind_label || String.fromCharCode(65 + idx);
+  const ratedWinesCount = bagLabels.filter((label) => {
     return votes.some(v => 
       isSameVoter(v.voter_name, voterName) && 
       (v.wine_1_label === label || v.match_id === `STANDALONE_${label}`)
     );
   }).length;
 
-  const totalWinesCount = wines?.length || 6;
+  const totalWinesCount = bagLabels.length;
   const progressPercent = Math.round((ratedWinesCount / totalWinesCount) * 100);
 
   const handleSelectTaster = (selectedName: string) => {
@@ -259,8 +260,7 @@ export default function TastingSheet({
 
       {/* Accordion Cards for Wines (A through F) */}
       <div className="space-y-3">
-        {wines.map((wine, idx) => {
-          const label = wine.blind_label || String.fromCharCode(65 + idx);
+        {bagLabels.map((label) => {
           const isExpanded = !!expandedLabels[label];
           
           // Check if this wine has been rated
@@ -269,7 +269,7 @@ export default function TastingSheet({
 
           return (
             <div 
-              key={wine.id || label}
+              key={label}
               className={`glass-panel rounded-2xl border transition-all duration-300 overflow-hidden ${
                 isExpanded 
                   ? 'border-wine-300/70 shadow-lg bg-white/95' 

@@ -45,18 +45,34 @@ const getOrGenerateVoterToken = () => {
   return token;
 };
 
-const getHeaders = () => {
+const getDynamicHeaders = (): Record<string, string> => {
+  const storedPasscode = (localStorage.getItem('WINE_TASTING_HOST_PASSCODE') || '').trim();
   return {
     'x-voter-token': getOrGenerateVoterToken(),
-    'x-host-passcode': localStorage.getItem('WINE_TASTING_HOST_PASSCODE') || ''
+    'x-host-passcode': storedPasscode || '1234'
   };
+};
+
+const dynamicFetch: typeof fetch = (input, init) => {
+  const headers = new Headers(
+    input instanceof Request ? input.headers : undefined
+  );
+  if (init?.headers) {
+    new Headers(init.headers).forEach((value, key) => {
+      headers.set(key, value);
+    });
+  }
+  const dynamicHeaders = getDynamicHeaders();
+  headers.set('x-voter-token', dynamicHeaders['x-voter-token']);
+  headers.set('x-host-passcode', dynamicHeaders['x-host-passcode']);
+  return fetch(input, { ...init, headers });
 };
 
 const config = getSBConfig();
 export const supabase = config 
   ? createClient(config.url, config.key, {
       global: {
-        headers: getHeaders()
+        fetch: dynamicFetch
       }
     })
   : null;

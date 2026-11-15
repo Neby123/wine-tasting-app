@@ -24,9 +24,7 @@ export default function Dashboard({
   const [activeTab, setActiveTab] = useState<'status' | 'analysis'>('status');
   const [mapping, setMapping] = useState<Record<string, string>>({});
 
-  const bagLabels = wines.length > 0
-    ? wines.map((w, idx) => w.blind_label || String.fromCharCode(65 + idx))
-    : ['A', 'B', 'C', 'D', 'E', 'F'];
+  const bagLabels = Array.from({ length: wines.length || 6 }, (_, idx) => String.fromCharCode(65 + idx));
 
   useEffect(() => {
     if (wines.length > 0) {
@@ -142,7 +140,7 @@ export default function Dashboard({
           valueRatio: score / Math.max(1, w.price || 1) // score per dollar
         };
       })
-    : (wines.length > 0 ? wines.map((w, idx) => w.blind_label || String.fromCharCode(65 + idx)) : ['A', 'B', 'C', 'D', 'E', 'F']).map(label => {
+    : bagLabels.map(label => {
         const score = getWineAppreciationIndex(label);
         
         let wins = 0;

@@ -53,6 +53,11 @@ export default function App() {
       setActiveSession(session);
       
       if (session) {
+        if (session.status === 'tasting') {
+          setCurrentTab(prev => (prev === 'intake' ? 'tasting' : prev));
+        } else if (session.status === 'completed') {
+          setCurrentTab(prev => (prev === 'intake' ? 'dashboard' : prev));
+        }
         const [winesData, votesData] = await Promise.all([
           db.getWines(session.id),
           db.getVotes(session.id)
@@ -310,7 +315,7 @@ export default function App() {
   };
 
   const handleRevealWines = async (mapping: Record<string, string>) => {
-    if (!activeSession || revealingRef.current || activeSession.status === 'completed') return;
+    if (!activeSession || revealingRef.current) return;
     revealingRef.current = true;
     setLoading(true);
     try {
@@ -569,7 +574,13 @@ export default function App() {
       {/* Top Banner Navigation */}
       <header className="glass-panel sticky top-0 z-50 border-b border-slate-800/80 px-6 py-4 flex flex-col md:flex-row md:items-center justify-between gap-4">
         <button
-          onClick={() => setCurrentTab('intake')}
+          onClick={() => setCurrentTab(
+            activeSession?.status === 'tasting'
+              ? 'tasting'
+              : activeSession?.status === 'completed'
+                ? 'dashboard'
+                : 'intake'
+          )}
           className="flex items-center gap-3 text-left focus:outline-none group cursor-pointer"
           title="Return to Home / Active Session"
         >
