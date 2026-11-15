@@ -1,6 +1,8 @@
-import React, { useState, useEffect } from 'react';
-import { Wine, Vote, WineSession } from '../utils/mockData';
-import { Trophy, DollarSign, Award, Eye, Shield, Users, RefreshCw, BarChart2 } from 'lucide-react';
+import React, { useState, useEffect, useId } from 'react';
+import type { Wine, Vote, WineSession } from '../types/wine';
+import { analyzeSessionLeaderboard, type WineStatRow } from '../utils/tastingAnalytics';
+import { extractCalendarDate } from '../utils/date';
+import { Trophy, DollarSign, Award, Eye, Shield, Users, RefreshCw, BarChart2, AlertTriangle, X } from 'lucide-react';
 
 interface DashboardProps {
   session: WineSession;
@@ -10,6 +12,9 @@ interface DashboardProps {
   matchWinners: Record<string, string>;
   onRevealWines: (mapping: Record<string, string>) => Promise<void>;
   onResetSession: () => Promise<void>;
+  hasLateArchiveDesync?: boolean;
+  syncingArchive?: boolean;
+  onSyncArchive?: () => Promise<void>;
 }
 
 export default function Dashboard({
@@ -19,10 +24,16 @@ export default function Dashboard({
   isHost,
   matchWinners,
   onRevealWines,
-  onResetSession
+  onResetSession,
+  hasLateArchiveDesync = false,
+  syncingArchive = false,
+  onSyncArchive
 }: DashboardProps) {
+  const idBase = useId();
   const [activeTab, setActiveTab] = useState<'status' | 'analysis'>('status');
   const [mapping, setMapping] = useState<Record<string, string>>({});
+  const [revealError, setRevealError] = useState('');
+  const [selectedChartWine, setSelectedChartWine] = useState<WineStatRow | null>(null);
 
   const bagLabels = Array.from({ length: wines.length || 6 }, (_, idx) => String.fromCharCode(65 + idx));
 
@@ -80,206 +91,32 @@ export default function Dashboard({
 
   const allVoters = getUniqueVoters();
 
-  // ----------------------------------------------------
-  // ADVANCED ANALYTICS & MATH CALCULATIONS
-  // ----------------------------------------------------
-
-  // Calculate Appreciation Index (0-100) for each wine
-  // For each vote containing wine's label, add score:
-  // if wine is wine_1, score is (100 - slider_value)
-  // if wine is wine_2, score is slider_value
-  const getWineAppreciationIndex = (label: string) => {
-    const wineVotes = votes.filter(
-      v => v.wine_1_label === label || v.wine_2_label === label
-    );
-
-    if (wineVotes.length === 0) return 50; // Neutral baseline
-
-    let scoreSum = 0;
-    wineVotes.forEach(v => {
-      if (v.match_id?.startsWith('STANDALONE_') || v.wine_1_label === v.wine_2_label) {
-        scoreSum += v.slider_value;
-      } else if (v.wine_1_label === label) {
-        scoreSum += (100 - v.slider_value);
-      } else {
-        scoreSum += v.slider_value;
-      }
-    });
-
-    return Math.round(scoreSum / wineVotes.length);
-  };
-
-  // Compile full table of wine stats
-  const wineStats = isRevealed
-    ? wines.map(w => {
-        const label = w.blind_label || '';
-        const score = getWineAppreciationIndex(label);
-        
-        // Count head-to-head battle victories across all votes cast by tasters
-        let wins = 0;
-        votes.forEach(v => {
-          if (v.match_id?.startsWith('STANDALONE_') || v.wine_1_label === v.wine_2_label) return;
-          if (v.wine_1_label === label && v.slider_value < 50) wins++;
-          if (v.wine_2_label === label && v.slider_value > 50) wins++;
-        });
-        if (wins === 0) {
-          Object.values(matchWinners).forEach(winner => {
-            if (winner === label) wins++;
-          });
-        }
-
-        const ratingsCount = votes.filter(
-          v => v.wine_1_label === label || v.wine_2_label === label
-        ).length;
-
-        return {
-          ...w,
-          score,
-          wins,
-          ratingsCount,
-          valueRatio: score / Math.max(1, w.price || 1) // score per dollar
-        };
-      })
-    : bagLabels.map(label => {
-        const score = getWineAppreciationIndex(label);
-        
-        let wins = 0;
-        votes.forEach(v => {
-          if (v.match_id?.startsWith('STANDALONE_') || v.wine_1_label === v.wine_2_label) return;
-          if (v.wine_1_label === label && v.slider_value < 50) wins++;
-          if (v.wine_2_label === label && v.slider_value > 50) wins++;
-        });
-        if (wins === 0) {
-          Object.values(matchWinners).forEach(winner => {
-            if (winner === label) wins++;
-          });
-        }
-        const ratingsCount = votes.filter(
-          v => v.wine_1_label === label || v.wine_2_label === label
-        ).length;
-
-        return {
-          id: `label-${label}`,
-          session_id: session.id,
-          submitted_by: 'Anonymous',
-          name: `Wine ${label}`,
-          producer: undefined,
-          vintage: undefined,
-          price: 0,
-          tasting_notes: undefined,
-          blind_label: label,
-          revealed: false,
-          score,
-          wins,
-          ratingsCount,
-          valueRatio: 0
-        };
-      });
-
-  const hasStandaloneVotes = votes.some(v => v.match_id?.startsWith('STANDALONE_') || v.wine_1_label === v.wine_2_label);
-  const hasHeadToHeadVotes = votes.some(v => v.match_id && !v.match_id.startsWith('STANDALONE_') && v.wine_1_label !== v.wine_2_label);
-  const isStandaloneSession = hasStandaloneVotes && !hasHeadToHeadVotes;
-
-  // Sort stats by average appreciation score (primary) and head-to-head wins (secondary)
-  const leaderboard = [...wineStats].sort((a, b) => {
-    if (b.score !== a.score) return b.score - a.score;
-    return b.wins - a.wins;
-  });
-
-  // Calculate Awards
-  const getAwards = () => {
-    if (wines.length === 0) return null;
-
-    // 1. Best in Show (Grand Champion: Highest scoring wine)
-    const bestInShow = leaderboard[0];
-
-    // 2. People's Choice / Runner-Up (avoid duplicating Best in Show in standalone mode)
-    const sortedByScore = [...wineStats].sort((a, b) => b.score - a.score);
-    let peoplesChoice = sortedByScore[0];
-    let isRunnerUp = false;
-    if (peoplesChoice && bestInShow && peoplesChoice.id === bestInShow.id && leaderboard.length >= 2) {
-      peoplesChoice = leaderboard[1];
-      isRunnerUp = true;
-    }
-
-    // 3. Best Value (Highest rating-to-price ratio, preferring winners or >= 50 score in standalone mode)
-    const bestValuePool = wineStats.filter(w => w.wins > 0);
-    const qualifiedPool = bestValuePool.length > 0
-      ? bestValuePool
-      : wineStats.filter(w => w.score >= 50);
-    const finalValuePool = qualifiedPool.length > 0 ? qualifiedPool : wineStats;
-    const bestValue = [...finalValuePool].sort((a, b) => b.valueRatio - a.valueRatio)[0];
-
-    // 4. Overpriced (Lowest rating-to-price ratio, filter to expensive ones > $20)
-    const expensiveWines = wineStats.filter(w => w.price >= 20);
-    const overpriced = expensiveWines.length > 0 
-      ? [...expensiveWines].sort((a, b) => a.valueRatio - b.valueRatio)[0]
-      : [...wineStats].sort((a, b) => a.valueRatio - b.valueRatio)[0];
-
-    // 5. Giant Killer: Cheapest wine that outperformed a significantly more expensive wine
-    let giantKillerMatch: any = null;
-
-    votes.forEach(v => {
-      if (v.match_id?.startsWith('STANDALONE_') || v.wine_1_label === v.wine_2_label) return;
-      const w1 = wineStats.find(w => w.blind_label === v.wine_1_label);
-      const w2 = wineStats.find(w => w.blind_label === v.wine_2_label);
-      if (!w1 || !w2) return;
-
-      const winner = v.slider_value < 50 ? w1 : v.slider_value > 50 ? w2 : null;
-      const loser = winner === w1 ? w2 : w1;
-
-      if (winner && loser && (winner.price ?? 0) < (loser.price ?? 0)) {
-        const margin = (loser.price ?? 0) - (winner.price ?? 0);
-        if (!giantKillerMatch || margin > giantKillerMatch.margin) {
-          giantKillerMatch = { matchId: v.match_id, winner, loser, margin };
-        }
-      }
-    });
-
-    if (!giantKillerMatch && wineStats.length >= 2) {
-      const sortedByPrice = [...wineStats]
-        .filter(w => typeof w.price === 'number' && w.price > 0)
-        .sort((a, b) => (a.price || 0) - (b.price || 0));
-      let bestMargin = 0;
-      let bestScoreDiff = -1;
-      for (let i = 0; i < sortedByPrice.length; i++) {
-        for (let j = i + 1; j < sortedByPrice.length; j++) {
-          const cheaper = sortedByPrice[i];
-          const pricier = sortedByPrice[j];
-          if (pricier.price > cheaper.price && cheaper.score > pricier.score) {
-            const margin = pricier.price - cheaper.price;
-            const scoreDiff = cheaper.score - pricier.score;
-            if (margin > bestMargin || (margin === bestMargin && scoreDiff > bestScoreDiff)) {
-              bestMargin = margin;
-              bestScoreDiff = scoreDiff;
-              giantKillerMatch = {
-                matchId: 'Decoupled Rating',
-                winner: cheaper,
-                loser: pricier,
-                margin
-              };
-            }
-          }
-        }
-      }
-    }
-
-    return {
-      bestInShow,
-      peoplesChoice,
-      isRunnerUp,
-      bestValue,
-      overpriced,
-      giantKiller: giantKillerMatch
-    };
-  };
-
-  const awards = getAwards();
+  // Compute standings, awards, and chart stats via shared pure analytics engine
+  const {
+    isStandaloneSession,
+    wineStats,
+    leaderboard,
+    awards
+  } = analyzeSessionLeaderboard(session, wines, votes, matchWinners);
 
   const handleConfirmReveal = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!canSubmitReveal) return;
-    await onRevealWines(mapping);
+    setRevealError('');
+    if (hasDuplicates) {
+      setRevealError('You assigned the same wine to multiple bags. Select each wine only once.');
+      return;
+    }
+    if (selectedWineIds.length !== targetCount) {
+      setRevealError(`Select a bottle for all ${targetCount} blind bags before revealing.`);
+      return;
+    }
+    try {
+      await onRevealWines(mapping);
+    } catch (err: unknown) {
+      setRevealError(
+        err instanceof Error ? err.message : 'Failed to reveal wines. Ensure Host Mode is enabled in Settings.'
+      );
+    }
   };
 
   return (
@@ -291,7 +128,7 @@ export default function Dashboard({
             <span className="text-xs bg-wine-950 text-[#6E172C] border border-wine-800/80 font-bold uppercase tracking-wider px-2.5 py-0.5 rounded-full">
               {session.status === 'setup' ? 'Setup Mode' : session.status === 'tasting' ? 'Tasting In Progress' : 'Completed'}
             </span>
-            <span className="text-slate-500 font-mono text-xs">{(session.date || '').split('T')[0]}</span>
+            <span className="text-slate-500 font-mono text-xs">{extractCalendarDate(session.date)}</span>
           </div>
           <h2 className="text-2xl sm:text-3xl font-bold font-serif text-slate-100">{session.name}</h2>
         </div>
@@ -300,14 +137,40 @@ export default function Dashboard({
         <div className="flex gap-3">
           {isHost && (
             <button
+              type="button"
               onClick={onResetSession}
-              className="py-2 px-4 border border-slate-800 bg-white hover:bg-slate-850 text-slate-400 hover:text-slate-100 rounded-lg text-xs transition-all flex items-center gap-1.5 shadow-xs"
+              className="min-h-[44px] py-2 px-4 border border-slate-800 bg-white hover:bg-slate-850 text-slate-400 hover:text-slate-100 rounded-lg text-xs transition-all flex items-center gap-1.5 shadow-xs"
             >
-              <RefreshCw className="w-3.5 h-3.5" /> Reset Session
+              <RefreshCw className="w-3.5 h-3.5" aria-hidden="true" /> Reset Session
             </button>
           )}
         </div>
       </div>
+
+      {/* Late Vote Archive Desync Alert for Host */}
+      {isHost && hasLateArchiveDesync && onSyncArchive && (
+        <div
+          role="status"
+          aria-live="polite"
+          className="rounded-2xl border border-amber-300 bg-amber-50 p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-sm"
+        >
+          <div className="flex items-start gap-2.5 text-amber-950">
+            <AlertTriangle className="w-4 h-4 text-amber-800 shrink-0 mt-0.5" aria-hidden="true" />
+            <div className="text-xs leading-relaxed">
+              <strong className="font-bold block">Late ratings logged after reveal</strong>
+              Standings reflect new or updated votes submitted after this session was archived. Re-sync so History, Palate, and Cellar match live votes.
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={onSyncArchive}
+            disabled={syncingArchive}
+            className="min-h-[44px] px-4 py-2 bg-[#6E172C] hover:bg-[#5A1425] disabled:opacity-50 text-white text-xs font-bold rounded-xl transition-colors shrink-0 shadow-xs"
+          >
+            {syncingArchive ? 'Syncing Archive...' : 'Sync History Archive'}
+          </button>
+        </div>
+      )}
 
       {/* Grand Champion Banner */}
       {isRevealed && awards && awards.bestInShow && (
@@ -329,27 +192,37 @@ export default function Dashboard({
       )}
 
       {/* Tabs */}
-      <div className="flex border-b border-slate-800">
+      <div className="flex border-b border-slate-800" role="tablist" aria-label="Dashboard views">
         <button
+          id={`${idBase}-tab-status`}
+          type="button"
+          role="tab"
+          aria-selected={activeTab === 'status'}
+          aria-controls={`${idBase}-panel-status`}
           onClick={() => setActiveTab('status')}
-          className={`pb-3 px-6 text-sm font-semibold tracking-wide border-b-2 transition-all flex items-center gap-2 ${
-            activeTab === 'status' 
-              ? 'border-[#6E172C] text-[#6E172C]' 
+          className={`min-h-[44px] pb-3 px-6 text-sm font-semibold tracking-wide border-b-2 transition-all flex items-center gap-2 ${
+            activeTab === 'status'
+              ? 'border-[#6E172C] text-[#6E172C]'
               : 'border-transparent text-slate-500 hover:text-slate-100'
           }`}
         >
-          <Users className="w-4 h-4" /> Live Tasting Status
+          <Users className="w-4 h-4" aria-hidden="true" /> Live Tasting Status
         </button>
         {isRevealed && (
           <button
+            id={`${idBase}-tab-analysis`}
+            type="button"
+            role="tab"
+            aria-selected={activeTab === 'analysis'}
+            aria-controls={`${idBase}-panel-analysis`}
             onClick={() => setActiveTab('analysis')}
-            className={`pb-3 px-6 text-sm font-semibold tracking-wide border-b-2 transition-all flex items-center gap-2 ${
-              activeTab === 'analysis' 
-                ? 'border-[#6E172C] text-[#6E172C]' 
+            className={`min-h-[44px] pb-3 px-6 text-sm font-semibold tracking-wide border-b-2 transition-all flex items-center gap-2 ${
+              activeTab === 'analysis'
+                ? 'border-[#6E172C] text-[#6E172C]'
                 : 'border-transparent text-slate-500 hover:text-slate-100'
             }`}
           >
-            <BarChart2 className="w-4 h-4" /> Value Analysis & Awards
+            <BarChart2 className="w-4 h-4" aria-hidden="true" /> Value Analysis &amp; Awards
           </button>
         )}
       </div>
@@ -358,7 +231,12 @@ export default function Dashboard({
       {/* VIEW 1: LIVE STATUS / TASTING WORKFLOW */}
       {/* ---------------------------------------------------- */}
       {activeTab === 'status' && (
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+        <div
+          id={`${idBase}-panel-status`}
+          role="tabpanel"
+          aria-labelledby={`${idBase}-tab-status`}
+          className="grid grid-cols-1 lg:grid-cols-3 gap-8"
+        >
           
           {/* Column 1 & 2: Host Unbag & Reveal Tool or Completed View */}
           <div className="lg:col-span-2 space-y-6">
@@ -368,8 +246,8 @@ export default function Dashboard({
                   <div className="border-b border-slate-850 pb-3 flex items-center justify-between">
                     <div>
                       <h3 className="text-xl font-bold font-serif text-slate-100 flex items-center gap-2">
-                        <Eye className="w-5.5 h-5.5 text-[#6E172C]" />
-                        Unbag & Reveal Bottles
+                        <Eye className="w-5.5 h-5.5 text-[#6E172C]" aria-hidden="true" />
+                        Unbag &amp; Reveal Bottles
                       </h3>
                       <p className="text-xs text-slate-500 mt-1">
                         When tasting is complete, unbag each physical bottle ({bagLabels[0]}-{bagLabels[bagLabels.length - 1]}) and map its blind letter to its true wine identity below.
@@ -379,45 +257,60 @@ export default function Dashboard({
 
                   <form onSubmit={handleConfirmReveal} className="space-y-6">
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                      {bagLabels.map((label) => (
-                        <div key={label} className="flex items-center gap-3 bg-slate-850/60 p-3 border border-slate-800 rounded-xl">
-                          <span className="w-8 h-8 rounded-full bg-[#6E172C] text-white font-black font-serif flex items-center justify-center text-sm shadow-xs">
-                            {label}
-                          </span>
-                          <div className="flex-1">
-                            <select
-                              value={mapping[label] || ''}
-                              onChange={(e) => setMapping(prev => ({ ...prev, [label]: e.target.value }))}
-                              className="w-full bg-white border border-slate-800 rounded-lg p-2 text-xs text-slate-100 focus:outline-none focus:border-[#6E172C] shadow-xs"
-                            >
-                              <option value="">-- Mapped Wine --</option>
-                              {wines.map(w => {
-                                const isSelectedElsewhere = Object.entries(mapping).some(([lbl, id]) => lbl !== label && id === w.id);
-                                return (
-                                  <option key={w.id} value={w.id} disabled={isSelectedElsewhere}>
-                                    {w.name} (${w.price.toFixed(0)}) - {w.submitted_by} {isSelectedElsewhere ? '(already mapped)' : ''}
-                                  </option>
-                                );
-                              })}
-                            </select>
+                      {bagLabels.map((label) => {
+                        const selectId = `${idBase}-bag-select-${label}`;
+                        return (
+                          <div key={label} className="flex items-center gap-3 bg-slate-850/60 p-3 border border-slate-800 rounded-xl">
+                            <span className="w-8 h-8 rounded-full bg-[#6E172C] text-white font-black font-serif flex items-center justify-center text-sm shadow-xs shrink-0">
+                              {label}
+                            </span>
+                            <div className="flex-1 min-w-0">
+                              <label htmlFor={selectId} className="visually-hidden">
+                                Mapped wine for Bag {label}
+                              </label>
+                              <select
+                                id={selectId}
+                                value={mapping[label] || ''}
+                                onChange={(e) => {
+                                  setMapping(prev => ({ ...prev, [label]: e.target.value }));
+                                  setRevealError('');
+                                }}
+                                className="w-full min-h-[44px] bg-white border border-slate-800 rounded-lg p-2 text-xs text-slate-100 focus:outline-none focus:border-[#6E172C] shadow-xs"
+                              >
+                                <option value="">-- Select Bag {label} Wine --</option>
+                                {wines.map(w => {
+                                  const isSelectedElsewhere = Object.entries(mapping).some(([lbl, id]) => lbl !== label && id === w.id);
+                                  return (
+                                    <option key={w.id} value={w.id} disabled={isSelectedElsewhere}>
+                                      {w.name} (${w.price.toFixed(0)}) - {w.submitted_by} {isSelectedElsewhere ? '(already mapped)' : ''}
+                                    </option>
+                                  );
+                                })}
+                              </select>
+                            </div>
                           </div>
-                        </div>
-                      ))}
+                        );
+                      })}
                     </div>
 
-                    {hasDuplicates && (
-                      <p className="text-rose-800 text-xs border border-rose-200 bg-rose-50 px-3 py-2 rounded-lg font-medium">
-                        Error: You have assigned the same wine to multiple bags. Please ensure each wine is assigned uniquely.
+                    {(hasDuplicates || revealError) && (
+                      <p role="alert" className="text-rose-800 text-xs border border-rose-200 bg-rose-50 px-3 py-2 rounded-lg font-medium">
+                        {revealError || 'Error: You have assigned the same wine to multiple bags. Please ensure each wine is assigned uniquely.'}
                       </p>
                     )}
 
-                    <div className="flex justify-end">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                      <span className="text-xs text-slate-500">
+                        {canSubmitReveal
+                          ? `All ${targetCount} bags mapped uniquely and ready to reveal.`
+                          : `${selectedWineIds.length} of ${targetCount} bags mapped.`}
+                      </span>
                       <button
                         type="submit"
                         disabled={!canSubmitReveal}
-                        className="py-3 px-8 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 disabled:from-slate-800 disabled:to-slate-850 disabled:text-slate-500 text-[#1E1814] font-bold rounded-xl text-sm transition-all flex items-center justify-center gap-2 shadow-lg shadow-amber-900/10"
+                        className="min-h-[48px] py-3 px-8 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 disabled:from-slate-800 disabled:to-slate-850 disabled:text-slate-500 text-[#1E1814] font-bold rounded-xl text-sm transition-all flex items-center justify-center gap-2 shadow-lg shadow-amber-900/10"
                       >
-                        <Eye className="w-4 h-4" /> Save Reveal & Map Results
+                        <Eye className="w-4 h-4" aria-hidden="true" /> Save Reveal &amp; Map Results
                       </button>
                     </div>
                   </form>
@@ -525,7 +418,12 @@ export default function Dashboard({
       {/* VIEW 2: VALUE ANALYSIS & AWARDS */}
       {/* ---------------------------------------------------- */}
       {activeTab === 'analysis' && isRevealed && awards && (
-        <div className="space-y-8 animate-fade-in">
+        <div
+          id={`${idBase}-panel-analysis`}
+          role="tabpanel"
+          aria-labelledby={`${idBase}-tab-analysis`}
+          className="space-y-8 animate-fade-in"
+        >
           
           {/* Medal Awards Grid */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
@@ -534,7 +432,7 @@ export default function Dashboard({
               <div className="glass-panel border-2 border-amber-300 bg-gradient-to-b from-amber-50 via-gold-950/60 to-white rounded-2xl p-5 text-center relative overflow-hidden flex flex-col justify-between min-h-[180px] shadow-sm">
                 <div className="absolute top-0 right-0 w-16 h-16 bg-amber-400/10 rounded-bl-full blur-sm" />
                 <div className="space-y-2">
-                  <Trophy className="w-8 h-8 text-amber-700 mx-auto" />
+                  <Trophy className="w-8 h-8 text-amber-700 mx-auto" aria-hidden="true" />
                   <p className="text-[10px] text-amber-900 font-extrabold uppercase tracking-widest">Grand Champion (Best in Show)</p>
                   <h4 className="text-base font-bold text-slate-100 font-serif leading-tight line-clamp-2">{awards.bestInShow.name}</h4>
                 </div>
@@ -550,7 +448,7 @@ export default function Dashboard({
               <div className="glass-panel border-2 border-rose-200 bg-gradient-to-b from-rose-50 via-wine-950/60 to-white rounded-2xl p-5 text-center relative overflow-hidden flex flex-col justify-between min-h-[180px] shadow-sm">
                 <div className="absolute top-0 right-0 w-16 h-16 bg-rose-400/10 rounded-bl-full blur-sm" />
                 <div className="space-y-2">
-                  <Award className="w-8 h-8 text-rose-700 mx-auto" />
+                  <Award className="w-8 h-8 text-rose-700 mx-auto" aria-hidden="true" />
                   <p className="text-[10px] text-rose-800 font-extrabold uppercase tracking-widest">
                     {awards.isRunnerUp ? `Runner-Up (${awards.peoplesChoice.score}/100)` : `Highest Rated (${awards.peoplesChoice.score}/100)`}
                   </p>
@@ -568,7 +466,7 @@ export default function Dashboard({
               <div className="glass-panel border-2 border-emerald-200 bg-gradient-to-b from-emerald-50 via-emerald-50/40 to-white rounded-2xl p-5 text-center relative overflow-hidden flex flex-col justify-between min-h-[180px] shadow-sm">
                 <div className="absolute top-0 right-0 w-16 h-16 bg-emerald-400/10 rounded-bl-full blur-sm" />
                 <div className="space-y-2">
-                  <DollarSign className="w-8 h-8 text-emerald-700 mx-auto" />
+                  <DollarSign className="w-8 h-8 text-emerald-700 mx-auto" aria-hidden="true" />
                   <p className="text-[10px] text-emerald-800 font-extrabold uppercase tracking-widest">Best Value (Score/Price)</p>
                   <h4 className="text-base font-bold text-slate-100 font-serif leading-tight line-clamp-2">{awards.bestValue.name}</h4>
                 </div>
@@ -583,16 +481,16 @@ export default function Dashboard({
             <div className="glass-panel border-2 border-purple-200 bg-gradient-to-b from-purple-50 via-purple-50/40 to-white rounded-2xl p-5 text-center relative overflow-hidden flex flex-col justify-between min-h-[180px] shadow-sm">
               <div className="absolute top-0 right-0 w-16 h-16 bg-purple-400/10 rounded-bl-full blur-sm" />
               <div className="space-y-2">
-                <Shield className="w-8 h-8 text-purple-700 mx-auto" />
+                <Shield className="w-8 h-8 text-purple-700 mx-auto" aria-hidden="true" />
                 <p className="text-[10px] text-purple-900 font-extrabold uppercase tracking-widest">Giant Killer (Cheapest Win)</p>
-                {awards.giantKiller ? (
+                {awards.giantKillerMatch ? (
                   <div className="space-y-1">
                     <h4 className="text-xs font-bold text-slate-100 leading-tight line-clamp-2">
-                      {awards.giantKiller.winner.name} (${awards.giantKiller.winner.price.toFixed(0)})
+                      {awards.giantKillerMatch.winner.name} (${awards.giantKillerMatch.winner.price.toFixed(0)})
                     </h4>
                     <p className="text-[9px] text-purple-800 font-bold uppercase tracking-wider">Defeated</p>
                     <h4 className="text-xs text-slate-500 leading-tight line-clamp-1">
-                      {awards.giantKiller.loser.name} (${awards.giantKiller.loser.price.toFixed(0)})
+                      {awards.giantKillerMatch.loser.name} (${awards.giantKillerMatch.loser.price.toFixed(0)})
                     </h4>
                   </div>
                 ) : (
@@ -602,7 +500,7 @@ export default function Dashboard({
               <div className="text-xs text-slate-500 mt-3 pt-2 border-t border-purple-200 flex justify-between items-center">
                 <span>Margin:</span>
                 <span className="text-purple-800 font-bold font-mono">
-                  {awards.giantKiller ? `$${awards.giantKiller.margin.toFixed(2)} diff` : 'N/A'}
+                  {awards.giantKillerMatch ? `$${awards.giantKillerMatch.margin.toFixed(2)} diff` : 'N/A'}
                 </span>
               </div>
             </div>
@@ -613,18 +511,15 @@ export default function Dashboard({
             <div className="border-b border-slate-850 pb-3 flex justify-between items-center">
               <div>
                 <h3 className="text-lg font-semibold text-slate-100">Price vs. Value Chart</h3>
-                <p className="text-xs text-slate-500">Analyze the correlation between a wine's cost and its average score. Optimal region: top left!</p>
+                <p className="text-xs text-slate-500">Tap or select any bottle point to inspect exact score and price details. Optimal region: top left!</p>
               </div>
             </div>
 
-            {/* SVG Responsive Chart */}
+            {/* Interactive Scatter Chart */}
             <div className="w-full h-80 bg-white border border-slate-800 rounded-xl relative p-4 flex flex-col justify-between shadow-inner">
-              {/* Grid axes and plot */}
               <div className="flex-1 w-full relative border-l border-b border-slate-800">
-                
-                {/* Horizontal guide lines (Score) */}
                 {[25, 50, 75, 100].map(level => (
-                  <div 
+                  <div
                     key={level}
                     className="absolute left-0 right-0 border-t border-slate-800/80 flex justify-end text-[9px] text-slate-400 font-mono pr-2"
                     style={{ bottom: `${level}%`, transform: 'translateY(-50%)' }}
@@ -633,48 +528,44 @@ export default function Dashboard({
                   </div>
                 ))}
 
-                {/* Quad labels */}
                 <div className="absolute top-2 left-2 text-[8px] font-bold text-emerald-800/60 uppercase tracking-widest">Smart Buy (High Quality, Low Price)</div>
                 <div className="absolute top-2 right-2 text-[8px] font-bold text-amber-800/60 uppercase tracking-widest">Splurge Worthy (High Quality, High Price)</div>
                 <div className="absolute bottom-2 left-2 text-[8px] font-bold text-slate-500/60 uppercase tracking-widest">Neutral (Low Quality, Low Price)</div>
                 <div className="absolute bottom-2 right-2 text-[8px] font-bold text-rose-800/60 uppercase tracking-widest">Overpriced (Low Quality, High Price)</div>
 
-                {/* Plot dots */}
                 {wineStats.map(w => {
-                  // Normalize price to 0-100 scale for plotting
-                  // Let's assume min price is $10, max price is $100 for bounds
                   const maxPriceVal = Math.max(...wineStats.map(x => x.price), 100);
                   const minPriceVal = Math.min(...wineStats.map(x => x.price), 5);
                   const priceDiff = maxPriceVal - minPriceVal;
-                  
                   const xPct = priceDiff > 0 ? ((w.price - minPriceVal) / priceDiff) * 90 + 5 : 50;
-                  const yPct = w.score; // Score is already 0-100
+                  const yPct = w.score;
+                  const isSelected = selectedChartWine?.id === w.id;
 
                   return (
-                    <div 
+                    <div
                       key={w.id}
-                      className="absolute group z-10 cursor-pointer"
-                      style={{ 
-                        left: `${xPct}%`, 
+                      className="absolute z-10"
+                      style={{
+                        left: `${xPct}%`,
                         bottom: `${yPct}%`,
                         transform: 'translate(-50%, 50%)'
                       }}
                     >
-                      {/* Interactive plot point */}
-                      <div className="w-4 h-4 rounded-full bg-[#821D35] hover:bg-amber-600 border border-white hover:scale-125 transition-transform flex items-center justify-center text-[9px] font-black text-white shadow-sm" />
-                      
-                      {/* Tooltip on hover */}
-                      <div className="hidden group-hover:block absolute bottom-6 left-1/2 -translate-x-1/2 w-48 bg-white border border-slate-800 rounded-lg p-2.5 shadow-xl z-20 text-xs space-y-1">
-                        <p className="font-bold text-slate-100 line-clamp-1">{w.name}</p>
-                        <div className="flex justify-between text-[10px] text-slate-400">
-                          <span>Rating: <strong className="text-slate-100">{w.score}/100</strong></span>
-                          <span>Price: <strong className="text-amber-800 font-mono">${w.price.toFixed(2)}</strong></span>
-                        </div>
-                        <p className="text-[9px] text-slate-500">Brought by: {w.submitted_by}</p>
-                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setSelectedChartWine(isSelected ? null : w)}
+                        aria-pressed={isSelected}
+                        aria-label={`Wine ${w.blind_label}: ${w.name}, score ${w.score} out of 100, price $${w.price.toFixed(2)}`}
+                        className="w-8 h-8 flex items-center justify-center rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-[#6E172C]"
+                      >
+                        <span
+                          className={`w-4 h-4 rounded-full border border-white transition-transform flex items-center justify-center shadow-sm ${
+                            isSelected ? 'bg-amber-600 scale-125 ring-2 ring-amber-400' : 'bg-[#821D35] hover:bg-amber-600 hover:scale-125'
+                          }`}
+                        />
+                      </button>
 
-                      {/* Label below dot */}
-                      <span className="absolute top-4 left-1/2 -translate-x-1/2 font-bold text-[10px] text-slate-500 font-serif">
+                      <span className="pointer-events-none absolute top-6 left-1/2 -translate-x-1/2 font-bold text-[10px] text-slate-500 font-serif">
                         {w.blind_label}
                       </span>
                     </div>
@@ -682,30 +573,58 @@ export default function Dashboard({
                 })}
               </div>
 
-              {/* Axis labels */}
               <div className="flex justify-between items-center text-[10px] text-slate-500 font-mono pt-2 px-1">
                 <span>Cheapest (${Math.min(...wineStats.map(x => x.price)).toFixed(0)})</span>
                 <span className="font-sans font-bold uppercase tracking-wider">Price Axis</span>
                 <span>Most Expensive (${Math.max(...wineStats.map(x => x.price)).toFixed(0)})</span>
               </div>
             </div>
+
+            {/* Tap / Keyboard Accessible Plot Inspector */}
+            {selectedChartWine && (
+              <div
+                role="status"
+                aria-live="polite"
+                className="rounded-xl border border-slate-800 bg-white p-3.5 flex items-center justify-between gap-4 shadow-sm"
+              >
+                <div className="min-w-0 space-y-0.5 text-xs">
+                  <p className="font-bold text-slate-100 truncate">
+                    Wine {selectedChartWine.blind_label}: {selectedChartWine.name}
+                  </p>
+                  <p className="text-slate-400 flex flex-wrap gap-x-3 gap-y-0.5">
+                    <span>Rating: <strong className="text-[#6E172C] font-mono">{selectedChartWine.score}/100</strong></span>
+                    <span>Price: <strong className="text-amber-800 font-mono">${selectedChartWine.price.toFixed(2)}</strong></span>
+                    <span>Brought by: <strong className="text-slate-200">{selectedChartWine.submitted_by}</strong></span>
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setSelectedChartWine(null)}
+                  aria-label="Close chart point details"
+                  className="min-w-[44px] min-h-[44px] flex items-center justify-center rounded-lg text-slate-400 hover:text-slate-100 hover:bg-slate-850"
+                >
+                  <X className="w-4 h-4" aria-hidden="true" />
+                </button>
+              </div>
+            )}
           </div>
 
           {/* Full stats breakdown table */}
           <div className="glass-panel rounded-2xl p-6 space-y-4">
-            <h3 className="text-lg font-semibold text-slate-100">Wine Specifications Breakdown</h3>
-            
-            <div className="overflow-x-auto">
+            <h3 id={`${idBase}-specs-heading`} className="text-lg font-semibold text-slate-100">Wine Specifications Breakdown</h3>
+
+            <div role="region" aria-labelledby={`${idBase}-specs-heading`} tabIndex={0} className="overflow-x-auto">
               <table className="w-full text-left text-xs border-collapse">
+                <caption className="visually-hidden">Wine specifications and appreciation scores breakdown</caption>
                 <thead>
                   <tr className="border-b border-slate-800 text-slate-500 uppercase font-bold tracking-wider">
-                    <th className="py-3 px-2">Label</th>
-                    <th className="py-3 px-4">Wine</th>
-                    <th className="py-3 px-4">Contributor</th>
-                    <th className="py-3 px-4">Price</th>
-                    <th className="py-3 px-4 text-center">{isStandaloneSession ? 'Ratings' : 'Wins'}</th>
-                    <th className="py-3 px-4 text-center">Appreciation Score</th>
-                    <th className="py-3 px-4">Tasting Notes</th>
+                    <th scope="col" className="py-3 px-2">Label</th>
+                    <th scope="col" className="py-3 px-4">Wine</th>
+                    <th scope="col" className="py-3 px-4">Contributor</th>
+                    <th scope="col" className="py-3 px-4">Price</th>
+                    <th scope="col" className="py-3 px-4 text-center">{isStandaloneSession ? 'Ratings' : 'Wins'}</th>
+                    <th scope="col" className="py-3 px-4 text-center">Appreciation Score</th>
+                    <th scope="col" className="py-3 px-4">Tasting Notes</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-800 text-slate-300">

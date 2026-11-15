@@ -1,0 +1,115 @@
+name: Supabase Keepalive Ping
+
+on:
+  schedule:
+    # Runs twice daily (at 05:15 and 17:15 UTC, off-peak) to prevent Supabase free-tier inactivity pause
+    - cron: '15 5,17 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  keepalive:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping Supabase REST Gateway & Database
+        env:
+          ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+        run: |
+          echo "Pinging Supabase project rprjfaxsmwdzqwzycujh..."
+
+          if [ -z "$ANON_KEY" ]; then
+            echo "ERROR: SUPABASE_ANON_KEY secret is not configured in repository secrets."
+            echo "Supabase database activity keepalive requires an anon API key to query Postgres tables."
+            exit 1
+          fi
+
+          if ! [[ "$ANON_KEY" =~ ^[A-Za-z0-9._-]+$ ]]; then
+            echo "SECURITY ERROR: SUPABASE_ANON_KEY secret contains invalid characters. Must be a valid JWT token."
+            exit 1
+          fi
+
+          # Case-insensitive check for high-privilege keywords
+          ANON_KEY_LOWER=$(printf '%s' "$ANON_KEY" | tr '[:upper:]' '[:lower:]')
+          if [[ "$ANON_KEY_LOWER" =~ (sb_secret_|service_role|master_key) ]]; then
+            echo "SECURITY ERROR: High-privilege secret key pattern detected in SUPABASE_ANON_KEY secret. Provide anon key only."
+            exit 1
+          fi
+
+          if [[ "$ANON_KEY" == sb_publishable_* ]]; then
+            echo "Publishable key format detected."
+          else
+            # Decode JWT payload and inspect top-level role claim using python3 via os.environ (no argv exposure)
+            ROLE=$(python3 -c "import os, sys, json, base64, textwrap; exec(textwrap.dedent('''
+              token = os.environ.get('ANON_KEY', '')
+              parts = token.split('.')
+              if len(parts) < 2:
+                  sys.exit(2)
+              b64 = parts[1].replace('-', '+').replace('_', '/')
+              b64 += '=' * ((4 - len(b64) % 4) % 4)
+              try:
+                  payload = json.loads(base64.b64decode(b64).decode('utf-8'))
+                  print(payload.get('role', ''))
+              except Exception:
+                  sys.exit(3)
+            '''))")
+            STATUS_PY=$?
+            if [ $STATUS_PY -ne 0 ]; then
+              echo "SECURITY ERROR: Failed to decode JWT payload in SUPABASE_ANON_KEY. Failing closed."
+              exit 1
+            fi
+
+            if [ "$ROLE" != "anon" ]; then
+              echo "SECURITY ERROR: SUPABASE_ANON_KEY must have role 'anon'. Detected role '$ROLE'."
+              exit 1
+            fi
+          fi
+
+          echo "Authenticated mode: Preparing curl configuration for keepalive burst..."
+          CURL_CFG="header = \"apikey: $ANON_KEY\""
+          if [[ "$ANON_KEY" != sb_publishable_* ]]; then
+            CURL_CFG="${CURL_CFG}"$'\n'"header = \"Authorization: Bearer $ANON_KEY\""
+          fi
+
+          ping_endpoint() {
+            local label="$1"
+            local method="$2"
+            local endpoint="$3"
+            shift 3
+            local extra_args=("$@")
+
+            echo "Executing keepalive request: $label ($method $endpoint)..."
+            local raw_status
+            raw_status=$(printf '%s\n' "$CURL_CFG" | curl -s -o /dev/null -w "%{http_code}" \
+              --retry 3 --retry-delay 5 --max-time 15 \
+              -X "$method" \
+              -H "Cache-Control: no-cache" \
+              "${extra_args[@]}" \
+              -K - \
+              "https://rprjfaxsmwdzqwzycujh.supabase.co${endpoint}" || true)
+
+            local status="${raw_status:-000}"
+            echo "[$label] HTTP Response Status Code: $status"
+
+            if [ "$status" = "200" ] || [ "$status" = "204" ] || [ "$status" = "206" ]; then
+              echo "[$label] SUCCESS: Endpoint responded with HTTP $status."
+            elif [ "$status" = "401" ]; then
+              echo "ERROR: SUPABASE_ANON_KEY secret was rejected by Supabase (HTTP 401 Unauthorized) on $label. Verify repository secret."
+              exit 1
+            elif [ "$status" = "000" ]; then
+              echo "ERROR: Failed to establish network connection or resolve host on $label (Supabase project may be paused in dashboard)."
+              exit 1
+            else
+              echo "ERROR: Unexpected HTTP status code $status received from Supabase on $label."
+              exit 1
+            fi
+          }
+
+          echo "Authenticated mode: Executing comprehensive database activity burst..."
+          ping_endpoint "sessions" "GET" "/rest/v1/sessions?select=id&limit=1" -H "Prefer: count=exact"
+          ping_endpoint "wines" "GET" "/rest/v1/wines?select=id&limit=1" -H "Prefer: count=exact"
+          ping_endpoint "history" "GET" "/rest/v1/history?select=id&limit=1" -H "Prefer: count=exact"
+          ping_endpoint "rpc-check_is_host" "POST" "/rest/v1/rpc/check_is_host" -H "Content-Type: application/json" -d "{}"
+
+          echo "SUCCESS: All database activity keepalive queries completed successfully! Activity timer reset."

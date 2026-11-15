@@ -1,26 +1,37 @@
 import { createClient } from '@supabase/supabase-js';
-import { WineSession, Wine, Vote, HistoricalTasting, WishlistItem, WineEnrichment } from './mockData';
+import type { WineSession, Wine, Vote, HistoricalTasting, WishlistItem, WineEnrichment } from '../types/wine';
+import {
+  getLocalCalendarDateString,
+  getTodayCompletedQueryLowerBound,
+  isSessionOnLocalToday
+} from './date';
+import {
+  safeStorageGet,
+  safeStorageSet,
+  generateUuid
+} from './storage';
 
 const getSBConfig = () => {
-  // Check URL params first (useful for guest invite links)
-  const params = new URLSearchParams(window.location.search);
-  const urlParam = params.get('sb_url');
-  const keyParam = params.get('sb_key');
+  if (typeof window !== 'undefined') {
+    const params = new URLSearchParams(window.location.search);
+    const urlParam = params.get('sb_url');
+    const keyParam = params.get('sb_key');
 
-  if (urlParam && keyParam) {
-    localStorage.setItem('WINE_TASTING_SB_URL', urlParam);
-    localStorage.setItem('WINE_TASTING_SB_KEY', keyParam);
-    
-    // Clean URL params so they don't linger in browser address bar
-    const newUrl = window.location.pathname + window.location.hash;
-    window.history.replaceState({}, document.title, newUrl);
-    
-    return { url: urlParam, key: keyParam };
+    if (urlParam && keyParam) {
+      safeStorageSet('WINE_TASTING_SB_URL', urlParam);
+      safeStorageSet('WINE_TASTING_SB_KEY', keyParam);
+
+      // Clean URL params so they don't linger in browser address bar
+      const newUrl = window.location.pathname + window.location.hash;
+      window.history.replaceState({}, document.title, newUrl);
+
+      return { url: urlParam.replace(/\/+$/, ''), key: keyParam };
+    }
   }
 
-  const rawUrl = (urlParam || localStorage.getItem('WINE_TASTING_SB_URL') || (import.meta.env.VITE_SUPABASE_URL as string) || '').trim();
-  const rawKey = (keyParam || localStorage.getItem('WINE_TASTING_SB_KEY') || (import.meta.env.VITE_SUPABASE_ANON_KEY as string) || '').trim();
-  
+  const rawUrl = (safeStorageGet('WINE_TASTING_SB_URL') || (import.meta.env.VITE_SUPABASE_URL as string) || '').trim();
+  const rawKey = (safeStorageGet('WINE_TASTING_SB_KEY') || (import.meta.env.VITE_SUPABASE_ANON_KEY as string) || '').trim();
+
   if (rawUrl && rawKey) {
     const url = rawUrl.replace(/\/+$/, '');
     return { url, key: rawKey };
@@ -29,24 +40,17 @@ const getSBConfig = () => {
 };
 
 // Synchronously ensure voter token exists (RFC4122 compliant UUID)
-const getOrGenerateVoterToken = () => {
-  let token = localStorage.getItem('WINE_TASTING_VOTER_TOKEN');
+export const getOrGenerateVoterToken = (): string => {
+  let token = safeStorageGet('WINE_TASTING_VOTER_TOKEN');
   if (!token) {
-    if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
-      token = crypto.randomUUID();
-    } else {
-      const uuidMask = '10000000-1000-4000-8000-100000000000';
-      token = uuidMask.replace(/[018]/g, c =>
-        (+c ^ (typeof crypto !== 'undefined' && crypto.getRandomValues ? crypto.getRandomValues(new Uint8Array(1))[0] : Math.floor(Math.random() * 16)) & 15 >> +c / 4).toString(16)
-      );
-    }
-    localStorage.setItem('WINE_TASTING_VOTER_TOKEN', token);
+    token = generateUuid();
+    safeStorageSet('WINE_TASTING_VOTER_TOKEN', token);
   }
   return token;
 };
 
 const getDynamicHeaders = (): Record<string, string> => {
-  const storedPasscode = (localStorage.getItem('WINE_TASTING_HOST_PASSCODE') || '').trim();
+  const storedPasscode = (safeStorageGet('WINE_TASTING_HOST_PASSCODE') || '').trim();
   return {
     'x-voter-token': getOrGenerateVoterToken(),
     'x-host-passcode': storedPasscode || '1234'
@@ -63,8 +67,12 @@ const dynamicFetch: typeof fetch = (input, init) => {
     });
   }
   const dynamicHeaders = getDynamicHeaders();
-  headers.set('x-voter-token', dynamicHeaders['x-voter-token']);
-  headers.set('x-host-passcode', dynamicHeaders['x-host-passcode']);
+  if (!headers.has('x-voter-token')) {
+    headers.set('x-voter-token', dynamicHeaders['x-voter-token']);
+  }
+  if (!headers.has('x-host-passcode')) {
+    headers.set('x-host-passcode', dynamicHeaders['x-host-passcode']);
+  }
   return fetch(input, { ...init, headers });
 };
 
@@ -176,17 +184,17 @@ export const db = {
     if (activeErr) throw activeErr;
     if (active) return active;
 
-    // 2. If no setup/tasting session, check for a session completed today
-    const today = new Date().toISOString().split('T')[0];
-    const { data: recent, error: recentErr } = await client
+    // 2. If no setup/tasting session, check for a session completed on the user's local calendar day
+    const lowerBound = getTodayCompletedQueryLowerBound();
+    const { data: recentCandidates, error: recentErr } = await client
       .from('sessions')
       .select('*')
       .eq('status', 'completed')
-      .gte('date', today)
+      .gte('date', lowerBound)
       .order('created_at', { ascending: false })
-      .limit(1)
-      .maybeSingle();
+      .limit(5);
     if (recentErr) throw recentErr;
+    const recent = (recentCandidates || []).find(s => isSessionOnLocalToday(s));
     return recent || null;
   },
 
@@ -208,7 +216,7 @@ export const db = {
 
     const newSession = {
       name,
-      date: date || new Date().toISOString().split('T')[0],
+      date: date || getLocalCalendarDateString(),
       status: 'setup'
     };
 
@@ -352,60 +360,79 @@ export const db = {
   submitVote: async (vote: Omit<Vote, 'id'>): Promise<Vote> => {
     const client = ensureClient();
     const dbPayload = serializeVoteForDb(vote);
+    if (!dbPayload.voter_name) {
+      throw new Error('Voter name is required before saving a rating.');
+    }
+
+    const findExistingVoteCaseInsensitive = async () => {
+      const normalizedTarget = dbPayload.voter_name.toLowerCase();
+      const escapedVoter = dbPayload.voter_name.replace(/[\\%_]/g, ch => `\\${ch}`);
+      const { data: candidates, error: existErr } = await client
+        .from('votes')
+        .select('id,voter_name')
+        .eq('session_id', dbPayload.session_id)
+        .eq('match_id', dbPayload.match_id)
+        .ilike('voter_name', escapedVoter)
+        .limit(5);
+      if (existErr) throw existErr;
+      return (candidates || []).find(
+        (row: { id: string; voter_name?: string | null }) =>
+          (row.voter_name || '').trim().toLowerCase() === normalizedTarget
+      ) || null;
+    };
+
+    const performVoteUpdate = async (target: { id: string; voter_name?: string | null }) => {
+      const preservedName = (target.voter_name || '').trim() || dbPayload.voter_name;
+      const { data, error } = await client
+        .from('votes')
+        .update({ ...dbPayload, voter_name: preservedName })
+        .eq('id', target.id)
+        .select(VOTE_PUBLIC_COLUMNS)
+        .maybeSingle();
+
+      if (error) {
+        const code = (error as { code?: string; status?: number }).code;
+        if (code === '42501') {
+          throw new Error(
+            `Cannot overwrite "${preservedName}"'s saved rating because it belongs to another browser/device. Re-open the original browser or add an initial (e.g. "${dbPayload.voter_name} 2").`
+          );
+        }
+        throw error;
+      }
+      if (!data) {
+        throw new Error(
+          `Cannot overwrite "${preservedName}"'s existing rating from this browser because it was saved on another device. Use the original browser or enter a unique name (e.g. "${dbPayload.voter_name} 2").`
+        );
+      }
+      return hydrateVoteFromDb(data);
+    };
 
     // Note: Do not use PostgREST `.upsert()` (`ON CONFLICT DO UPDATE`) here because
     // column-level `SELECT` grants on `public.votes` (which hide `voter_token`) trigger
     // SQLSTATE 42501 (`permission denied for table votes`) on ON CONFLICT checks.
-    const { data: existing, error: existErr } = await client
-      .from('votes')
-      .select('id')
-      .eq('session_id', dbPayload.session_id)
-      .eq('voter_name', dbPayload.voter_name)
-      .eq('match_id', dbPayload.match_id)
-      .maybeSingle();
-
-    if (existErr) throw existErr;
+    const existing = await findExistingVoteCaseInsensitive();
 
     if (existing) {
-      const { data, error } = await client
-        .from('votes')
-        .update(dbPayload)
-        .eq('id', existing.id)
-        .select(VOTE_PUBLIC_COLUMNS)
-        .single();
-      if (error) throw error;
-      return hydrateVoteFromDb(data);
-    } else {
-      const { data, error } = await client
-        .from('votes')
-        .insert(dbPayload)
-        .select(VOTE_PUBLIC_COLUMNS)
-        .single();
-      if (error) {
-        // Retry as update if a concurrent request inserted first (SQLSTATE 23505)
-        if ((error as any)?.code === '23505') {
-          const { data: raced } = await client
-            .from('votes')
-            .select('id')
-            .eq('session_id', dbPayload.session_id)
-            .eq('voter_name', dbPayload.voter_name)
-            .eq('match_id', dbPayload.match_id)
-            .maybeSingle();
-          if (raced) {
-            const { data: updated, error: updateErr } = await client
-              .from('votes')
-              .update(dbPayload)
-              .eq('id', raced.id)
-              .select(VOTE_PUBLIC_COLUMNS)
-              .single();
-            if (updateErr) throw updateErr;
-            return hydrateVoteFromDb(updated);
-          }
-        }
-        throw error;
-      }
-      return hydrateVoteFromDb(data);
+      return await performVoteUpdate(existing);
     }
+
+    const { data, error } = await client
+      .from('votes')
+      .insert(dbPayload)
+      .select(VOTE_PUBLIC_COLUMNS)
+      .single();
+
+    if (error) {
+      // Retry as update if a concurrent request inserted first (SQLSTATE 23505)
+      if ((error as { code?: string })?.code === '23505') {
+        const raced = await findExistingVoteCaseInsensitive();
+        if (raced) {
+          return await performVoteUpdate(raced);
+        }
+      }
+      throw error;
+    }
+    return hydrateVoteFromDb(data);
   },
 
   getHistory: async (): Promise<HistoricalTasting[]> => {
@@ -513,6 +540,59 @@ export const db = {
     if (error) throw error;
   },
 
+  verifyHostPasscode: async (
+    passcodeCandidate?: string
+  ): Promise<{ valid: boolean; reason?: string }> => {
+    const client = ensureClient();
+    const candidate = (
+      passcodeCandidate !== undefined
+        ? passcodeCandidate
+        : safeStorageGet('WINE_TASTING_HOST_PASSCODE') || ''
+    ).trim();
+
+    if (!candidate) {
+      return { valid: false, reason: 'Please enter a host passcode.' };
+    }
+
+    const activeConfig = getSBConfig();
+    if (activeConfig) {
+      try {
+        const res = await fetch(`${activeConfig.url}/rest/v1/rpc/check_is_host`, {
+          method: 'POST',
+          headers: {
+            apikey: activeConfig.key,
+            Authorization: `Bearer ${activeConfig.key}`,
+            'Content-Type': 'application/json',
+            'x-voter-token': getOrGenerateVoterToken(),
+            'x-host-passcode': candidate
+          },
+          body: '{}'
+        });
+        if (!res.ok) {
+          return {
+            valid: false,
+            reason: `Passcode check returned HTTP ${res.status}.`
+          };
+        }
+        const verified = await res.json();
+        return verified === true
+          ? { valid: true }
+          : { valid: false, reason: 'Incorrect host passcode — rejected by database RLS.' };
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : 'Network error verifying passcode.';
+        return { valid: false, reason: message };
+      }
+    }
+
+    const { data, error } = await client.rpc('check_is_host');
+    if (error) {
+      return { valid: false, reason: error.message };
+    }
+    return data === true
+      ? { valid: true }
+      : { valid: false, reason: 'Incorrect host passcode.' };
+  },
+
   // --- Wine auto-fill (enrichment via Supabase Edge Function) --------------
   // Calls the `enrich-wine` edge function, which asks an LLM to infer stable
   // descriptive facts (varietal, region, country, style) from the name +
@@ -527,7 +607,20 @@ export const db = {
     const { data, error } = await client.functions.invoke('enrich-wine', {
       body: { name, vintage, producer }
     });
-    if (error) throw error;
+    if (error) {
+      const errStatus = (error as { context?: { status?: number }; status?: number })?.context?.status
+        ?? (error as { status?: number })?.status;
+      const errMsg = (error as { message?: string })?.message || '';
+      if (
+        errStatus === 404 ||
+        /404|not\s*found|failed to send a request/i.test(errMsg)
+      ) {
+        throw new Error(
+          'Wine auto-fill is unavailable because the optional enrich-wine Edge Function is not deployed on this backend. Enter details manually.'
+        );
+      }
+      throw error;
+    }
     if (!data || typeof data !== 'object') {
       throw new Error('Auto-fill returned no data.');
     }

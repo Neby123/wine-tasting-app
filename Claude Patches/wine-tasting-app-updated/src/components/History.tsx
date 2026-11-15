@@ -1,7 +1,8 @@
-import { useState, useEffect } from 'react';
-import { HistoricalTasting } from '../utils/mockData';
+import { useState, useEffect, useId } from 'react';
+import type { HistoricalTasting } from '../types/wine';
+import { extractCalendarDate } from '../utils/date';
 import { db } from '../utils/supabase';
-import { Trophy, Calendar, DollarSign, Award, ChevronDown, ChevronUp, RefreshCw } from 'lucide-react';
+import { Trophy, Calendar, DollarSign, Award, ChevronDown, ChevronUp, RefreshCw, AlertCircle } from 'lucide-react';
 
 interface HistoryProps {
   voterName: string;
@@ -9,18 +10,22 @@ interface HistoryProps {
 }
 
 export default function History({ voterName, onRefresh }: HistoryProps) {
+  const idBase = useId();
   const [sessions, setSessions] = useState<HistoricalTasting[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
   const [expandedSessionId, setExpandedSessionId] = useState<string | null>(null);
   const [selectedVoterName, setSelectedVoterName] = useState<Record<string, string>>({});
 
   const loadHistoryData = async () => {
     setLoading(true);
+    setLoadError('');
     try {
       const data = await db.getHistory();
       setSessions(data || []);
     } catch (err) {
       console.error("Error loading history:", err);
+      setLoadError(err instanceof Error ? err.message : 'Unable to load historical tasting archives.');
       setSessions([]);
     } finally {
       setLoading(false);
@@ -40,27 +45,32 @@ export default function History({ voterName, onRefresh }: HistoryProps) {
     if (onRefresh) onRefresh();
   };
 
-  const getPersonalNotesForLabel = (label: string, voter: string, sessionVotes?: any[]) => {
+  const getPersonalNotesForLabel = (label: string, voter: string, sessionVotes?: HistoricalTasting['votes']) => {
     if (!sessionVotes) return null;
-    const votes = sessionVotes.filter(v => 
-      v.voter_name.toLowerCase() === voter.toLowerCase() && 
+    const votes = sessionVotes.filter(v =>
+      (v.voter_name || '').trim().toLowerCase() === voter.trim().toLowerCase() &&
       (v.wine_1_label === label || v.wine_2_label === label)
     );
     if (votes.length === 0) return null;
-    
+
     return votes.map(v => {
       const isStandalone = v.match_id?.startsWith('STANDALONE_') || v.wine_1_label === v.wine_2_label;
       const isWine1 = v.wine_1_label === label;
       const preferenceVal = isStandalone ? v.slider_value : (isWine1 ? (100 - v.slider_value) : v.slider_value);
       const notes = isWine1 ? v.notes_wine_1 : v.notes_wine_2;
       const opponent = isStandalone ? undefined : (isWine1 ? v.wine_2_label : v.wine_1_label);
-      
+
       return {
         matchId: isStandalone ? 'Standalone Rating' : v.match_id,
         opponent,
         notes: notes?.trim(),
         score: preferenceVal,
-        isStandalone
+        isStandalone,
+        perceivedPrice: v.perceived_price_1,
+        buyAgain: v.buy_again_1,
+        acidity: v.acidity_1,
+        body: v.body_1,
+        sweetness: v.sweetness_1
       };
     });
   };
@@ -75,19 +85,37 @@ export default function History({ voterName, onRefresh }: HistoryProps) {
           </p>
         </div>
         <button
+          type="button"
           onClick={handleRefresh}
-          className="p-2 border border-slate-800 bg-white hover:bg-slate-850 text-slate-400 hover:text-slate-100 rounded-lg text-xs transition-colors flex items-center gap-1.5 shadow-xs"
+          aria-label="Reload history data"
+          className="min-w-[44px] min-h-[44px] flex items-center justify-center p-2 border border-slate-800 bg-white hover:bg-slate-850 text-slate-400 hover:text-slate-100 rounded-lg text-xs transition-colors shadow-xs"
           title="Reload history data"
         >
-          <RefreshCw className="w-4 h-4" />
+          <RefreshCw className="w-4 h-4" aria-hidden="true" />
         </button>
       </div>
 
+      {loadError && (
+        <div role="alert" className="bg-rose-50 border border-rose-300 rounded-2xl p-4 flex items-center justify-between gap-4 text-xs text-rose-900">
+          <span className="flex items-center gap-2 font-semibold">
+            <AlertCircle className="w-4 h-4 text-rose-700 shrink-0" aria-hidden="true" />
+            {loadError}
+          </span>
+          <button
+            type="button"
+            onClick={handleRefresh}
+            className="min-h-[36px] px-3 py-1 bg-rose-700 text-white font-bold rounded-lg hover:bg-rose-800 transition-colors"
+          >
+            Retry
+          </button>
+        </div>
+      )}
+
       {loading ? (
         <div className="flex justify-center items-center py-12">
-          <RefreshCw className="w-8 h-8 text-[#6E172C] animate-spin" />
+          <RefreshCw className="w-8 h-8 text-[#6E172C] animate-spin" aria-hidden="true" />
         </div>
-      ) : sessions.length === 0 ? (
+      ) : sessions.length === 0 && !loadError ? (
         <div className="glass-panel rounded-2xl p-8 text-center text-slate-500 border border-slate-800 bg-white shadow-sm">
           No historical wine tasting sessions found in the database.
         </div>
@@ -192,74 +220,88 @@ export default function History({ voterName, onRefresh }: HistoryProps) {
             }
           }
 
+          const triggerId = `${idBase}-trigger-${session.id}`;
+          const panelId = `${idBase}-panel-${session.id}`;
+          const tableHeadingId = `${idBase}-table-${session.id}`;
+          const voterSelectId = `${idBase}-voter-${session.id}`;
+
           return (
-            <div 
-              key={session.id} 
+            <div
+              key={session.id}
               className={`glass-panel rounded-2xl overflow-hidden border transition-all duration-300 ${
                 isExpanded ? 'border-[#6E172C]/40 bg-white shadow-md' : 'border-slate-800 bg-white shadow-xs'
               }`}
             >
-              {/* Session Summary Bar */}
-              <div 
-                onClick={() => handleToggleExpand(session.id)}
-                className="p-6 flex flex-col md:flex-row md:items-center justify-between gap-4 cursor-pointer hover:bg-slate-850/40 transition-colors"
-              >
-                <div className="space-y-2">
-                  <div className="flex items-center gap-2 text-xs text-slate-500">
-                    <Calendar className="w-3.5 h-3.5" />
-                    <span>{session.date}</span>
-                    <span>•</span>
-                    <span>{session.winesCount} Wines Tested</span>
-                  </div>
-                  <h3 className="text-xl font-bold font-serif text-slate-100">{session.name}</h3>
-                </div>
+              {/* WAI-ARIA Accessible Disclosure Session Bar */}
+              <h3 className="text-xl font-bold font-serif text-slate-100">
+                <button
+                  id={triggerId}
+                  type="button"
+                  aria-expanded={isExpanded}
+                  aria-controls={panelId}
+                  onClick={() => handleToggleExpand(session.id)}
+                  className="w-full p-6 flex flex-col md:flex-row md:items-center justify-between gap-4 text-left hover:bg-slate-850/40 transition-colors"
+                >
+                  <span className="space-y-2 block">
+                    <span className="flex items-center gap-2 text-xs font-sans font-normal text-slate-500">
+                      <Calendar className="w-3.5 h-3.5" aria-hidden="true" />
+                      <span>{extractCalendarDate(session.date)}</span>
+                      <span>•</span>
+                      <span>{session.winesCount} Wines Tested</span>
+                    </span>
+                    <span className="block text-xl font-bold font-serif text-slate-100">{session.name}</span>
+                  </span>
 
-                <div className="flex items-center gap-6">
-                  {/* Quick Winner Badge */}
-                  <div className="text-right">
-                    <p className="text-[10px] text-amber-800 font-extrabold uppercase tracking-widest flex items-center justify-end gap-1">
-                      <Trophy className="w-3 h-3 text-amber-600" /> Winner
-                    </p>
-                    <p className="text-sm font-semibold text-slate-100 leading-tight">
-                      {displayWinner}
-                    </p>
-                    {displayBroughtBy && displayBroughtBy !== 'Guest' && (
-                      <p className="text-xs text-slate-400">
-                        Brought by: <strong className="text-slate-100">{displayBroughtBy}</strong>
-                      </p>
-                    )}
-                  </div>
+                  <span className="flex items-center gap-6 font-sans">
+                    <span className="text-right block">
+                      <span className="text-[10px] text-amber-800 font-extrabold uppercase tracking-widest flex items-center justify-end gap-1">
+                        <Trophy className="w-3 h-3 text-amber-600" aria-hidden="true" /> Winner
+                      </span>
+                      <span className="block text-sm font-semibold text-slate-100 leading-tight">
+                        {displayWinner}
+                      </span>
+                      {displayBroughtBy && displayBroughtBy !== 'Guest' && (
+                        <span className="block text-xs font-normal text-slate-400">
+                          Brought by: <strong className="text-slate-100">{displayBroughtBy}</strong>
+                        </span>
+                      )}
+                    </span>
 
-                  {/* Expand icon */}
-                  <div className="text-slate-500 bg-slate-850 p-2 rounded-full border border-slate-800">
-                    {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
-                  </div>
-                </div>
-              </div>
+                    <span className="min-w-[44px] min-h-[44px] flex items-center justify-center text-slate-500 bg-slate-850 p-2 rounded-full border border-slate-800 shrink-0">
+                      {isExpanded ? <ChevronUp className="w-4 h-4" aria-hidden="true" /> : <ChevronDown className="w-4 h-4" aria-hidden="true" />}
+                    </span>
+                  </span>
+                </button>
+              </h3>
 
               {/* Expanded Details Section */}
               {isExpanded && (
-                <div className="border-t border-slate-800 bg-slate-950/60 p-6 space-y-6 animate-scale-in">
+                <div
+                  id={panelId}
+                  role="region"
+                  aria-labelledby={triggerId}
+                  className="border-t border-slate-800 bg-slate-950/60 p-6 space-y-6 animate-scale-in"
+                >
                   
                   {/* Quick Medals Summary */}
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                     <div className="bg-amber-50/80 border border-amber-200 rounded-xl p-4 space-y-1 shadow-xs">
                       <p className="text-[9px] text-amber-900 font-extrabold uppercase tracking-widest flex items-center gap-1">
-                        <Trophy className="w-3 h-3 text-amber-700" /> Best in Show
+                        <Trophy className="w-3 h-3 text-amber-700" aria-hidden="true" /> Best in Show
                       </p>
                       <p className="text-xs font-semibold text-slate-100">{displayGroupWinner}</p>
                     </div>
 
                     <div className="bg-emerald-50/80 border border-emerald-200 rounded-xl p-4 space-y-1 shadow-xs">
                       <p className="text-[9px] text-emerald-800 font-extrabold uppercase tracking-widest flex items-center gap-1">
-                        <DollarSign className="w-3 h-3 text-emerald-700" /> Best Value Selection
+                        <DollarSign className="w-3 h-3 text-emerald-700" aria-hidden="true" /> Best Value Selection
                       </p>
                       <p className="text-xs font-semibold text-slate-100">{session.bestValue}</p>
                     </div>
 
                     <div className="bg-purple-50/80 border border-purple-200 rounded-xl p-4 space-y-1 shadow-xs">
                       <p className="text-[9px] text-purple-900 font-extrabold uppercase tracking-widest flex items-center gap-1">
-                        <Award className="w-3 h-3 text-purple-700" /> Giant Killer Match
+                        <Award className="w-3 h-3 text-purple-700" aria-hidden="true" /> Giant Killer Match
                       </p>
                       <p className="text-xs font-semibold text-slate-100 line-clamp-1">{displayGiantKiller || "No giant killer matches logged"}</p>
                     </div>
@@ -267,18 +309,19 @@ export default function History({ voterName, onRefresh }: HistoryProps) {
 
                   {/* Wines Table */}
                   <div className="space-y-3">
-                    <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider">Tournament Results & Specs</h4>
-                    <div className="overflow-x-auto">
+                    <h4 id={tableHeadingId} className="text-xs font-bold text-slate-500 uppercase tracking-wider">Tournament Results &amp; Specs</h4>
+                    <div role="region" aria-labelledby={tableHeadingId} tabIndex={0} className="overflow-x-auto">
                       <table className="w-full text-left text-xs border-collapse">
+                        <caption className="visually-hidden">{session.name} tournament standings and wine pricing</caption>
                         <thead>
                           <tr className="border-b border-slate-800 text-slate-500 font-bold uppercase tracking-wider">
-                            <th className="py-2.5 px-2">Rank</th>
-                            {sessionWines[0]?.blind_label && <th className="py-2.5 px-2 text-center">Label</th>}
-                            <th className="py-2.5 px-3">Wine Details</th>
-                            {hasContributors && <th className="py-2.5 px-3">Contributor</th>}
-                            <th className="py-2.5 px-3">Price</th>
-                            <th className="py-2.5 px-3 text-center">{isStandaloneArchive ? 'Ratings' : 'Wins'}</th>
-                            <th className="py-2.5 px-3 text-center">Appreciation Score</th>
+                            <th scope="col" className="py-2.5 px-2">Rank</th>
+                            {sessionWines[0]?.blind_label && <th scope="col" className="py-2.5 px-2 text-center">Label</th>}
+                            <th scope="col" className="py-2.5 px-3">Wine Details</th>
+                            {hasContributors && <th scope="col" className="py-2.5 px-3">Contributor</th>}
+                            <th scope="col" className="py-2.5 px-3">Price</th>
+                            <th scope="col" className="py-2.5 px-3 text-center">{isStandaloneArchive ? 'Ratings' : 'Wins'}</th>
+                            <th scope="col" className="py-2.5 px-3 text-center">Appreciation Score</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-800 text-slate-300">
@@ -329,11 +372,12 @@ export default function History({ voterName, onRefresh }: HistoryProps) {
                           
                           {uniqueVoters.length > 0 && (
                             <div className="flex items-center gap-2">
-                              <span className="text-xs text-slate-400 font-medium">Taster Journal for:</span>
+                              <label htmlFor={voterSelectId} className="text-xs text-slate-400 font-medium">Taster Journal for:</label>
                               <select
+                                id={voterSelectId}
                                 value={activeVoter}
                                 onChange={(e) => setSelectedVoterName(prev => ({ ...prev, [session.id]: e.target.value }))}
-                                className="px-2.5 py-1 bg-white border border-slate-800 rounded-lg text-slate-100 text-xs focus:outline-none focus:ring-1 focus:ring-[#6E172C] font-semibold shadow-xs"
+                                className="min-h-[44px] px-2.5 py-1 bg-white border border-slate-800 rounded-lg text-slate-100 text-xs focus:outline-none focus:ring-1 focus:ring-[#6E172C] font-semibold shadow-xs"
                               >
                                 {uniqueVoters.map(v => (
                                   <option key={v} value={v}>{v}</option>
@@ -422,6 +466,35 @@ export default function History({ voterName, onRefresh }: HistoryProps) {
                                                 <p className="text-slate-400 italic mt-0.5 font-sans">
                                                   "{ev.notes}"
                                                 </p>
+                                              )}
+                                              {(ev.perceivedPrice || ev.buyAgain || ev.acidity || ev.body || ev.sweetness) && (
+                                                <div className="flex flex-wrap gap-1 pt-1">
+                                                  {ev.perceivedPrice && (
+                                                    <span className="text-[9px] px-1.5 py-0.5 rounded bg-white border border-slate-800 text-amber-800 font-mono font-semibold">
+                                                      {ev.perceivedPrice === 'cheap' ? '$' : ev.perceivedPrice === 'mid' ? '$$' : '$$$'}
+                                                    </span>
+                                                  )}
+                                                  {ev.buyAgain && (
+                                                    <span className="text-[9px] px-1.5 py-0.5 rounded bg-white border border-slate-800 text-slate-200 font-semibold">
+                                                      {ev.buyAgain === 'yes' ? 'Buy Again' : ev.buyAgain === 'maybe' ? 'Maybe' : 'Pass'}
+                                                    </span>
+                                                  )}
+                                                  {ev.acidity !== undefined && (
+                                                    <span className="text-[9px] px-1.5 py-0.5 rounded bg-white border border-slate-800 text-slate-400 font-mono">
+                                                      Acid {ev.acidity}/5
+                                                    </span>
+                                                  )}
+                                                  {ev.body !== undefined && (
+                                                    <span className="text-[9px] px-1.5 py-0.5 rounded bg-white border border-slate-800 text-slate-400 font-mono">
+                                                      Body {ev.body}/5
+                                                    </span>
+                                                  )}
+                                                  {ev.sweetness !== undefined && (
+                                                    <span className="text-[9px] px-1.5 py-0.5 rounded bg-white border border-slate-800 text-slate-400 font-mono">
+                                                      Sweet {ev.sweetness}/5
+                                                    </span>
+                                                  )}
+                                                </div>
                                               )}
                                             </div>
                                           );

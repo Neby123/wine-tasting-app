@@ -1,5 +1,9 @@
 [CmdletBinding()]
-param()
+param(
+    [switch]$RunE2E,
+    [switch]$SkipSmokeTest,
+    [string]$HostPasscode = ""
+)
 
 $ErrorActionPreference = "Stop"
 
@@ -222,10 +226,11 @@ function Get-SupabaseRows([string]$Uri, [hashtable]$Headers) {
     return ,$List.ToArray()
 }
 
-function Invoke-LiveVoteSmokeTest {
+function Invoke-LiveMultiTableSmokeTest {
     param(
         [Parameter(Mandatory = $true)][string]$Url,
-        [Parameter(Mandatory = $true)][string]$AnonKey
+        [Parameter(Mandatory = $true)][string]$AnonKey,
+        [string]$Passcode = ""
     )
 
     [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
@@ -234,7 +239,10 @@ function Invoke-LiveVoteSmokeTest {
     $SmokeTag = [guid]::NewGuid().ToString("N").Substring(0, 12)
     $SmokeVoter = "__smoke_test__$SmokeTag"
     $SmokeMatch = "STANDALONE_SMOKE_$SmokeTag"
+    $SmokeWineName = "[SMOKE_TEST] Bottle $SmokeTag"
+    $SmokeSessionName = "[SMOKE_TEST] Session $SmokeTag"
     $VotePublicColumns = "id,session_id,voter_name,match_id,wine_1_label,wine_2_label,slider_value,notes_wine_1,notes_wine_2,created_at"
+    $WishlistPublicColumns = "id,voter_name,wine_name,producer,vintage,varietal,region,price,source_session_id,source_history_id,note,created_at"
 
     $BaseHeaders = @{
         "apikey"        = $AnonKey
@@ -250,21 +258,30 @@ function Invoke-LiveVoteSmokeTest {
     $WriteHeaders["Prefer"] = "return=representation"
     $WriteHeaders["Accept"] = "application/vnd.pgrst.object+json"
 
+    # 1. Read-only health verification across all 5 core tables (never mutates existing sessions)
+    foreach ($Tbl in @("sessions", "wines", "votes", "history", "wishlist")) {
+        try {
+            Invoke-RestMethod -Method Get -Uri "$RestBase/${Tbl}?select=id&limit=1" -Headers $BaseHeaders -TimeoutSec 15 | Out-Null
+        } catch {
+            throw "Live smoke test failed reading public.${Tbl}: $(Get-HttpErrorDetail $_)"
+        }
+    }
+
     try {
         $Sessions = Get-SupabaseRows "$RestBase/sessions?select=id&order=created_at.desc&limit=1" $BaseHeaders
     } catch {
-        throw "Live smoke test failed fetching active/latest session: $(Get-HttpErrorDetail $_)"
+        throw "Live smoke test failed fetching latest session id: $(Get-HttpErrorDetail $_)"
     }
     if ($Sessions.Count -eq 0 -or -not $Sessions[0].id) {
         throw "Live smoke test failed: no row found in public.sessions."
     }
-    $SessionId = [string]$Sessions[0].id
+    $TargetSessionId = [string]$Sessions[0].id
 
-    $LookupUri = "$RestBase/votes?select=id&session_id=eq.$([uri]::EscapeDataString($SessionId))&voter_name=eq.$([uri]::EscapeDataString($SmokeVoter))&match_id=eq.$([uri]::EscapeDataString($SmokeMatch))"
-    $EscapedCols = [uri]::EscapeDataString($VotePublicColumns)
+    $EscapedVoteCols = [uri]::EscapeDataString($VotePublicColumns)
+    $EscapedWishCols = [uri]::EscapeDataString($WishlistPublicColumns)
     $MetaJson = (@{
         __v               = 1
-        perceived_price_1 = "10-20"
+        perceived_price_1 = "mid"
         buy_again_1       = "yes"
         acidity_1         = 3
         body_1            = 3
@@ -272,91 +289,170 @@ function Invoke-LiveVoteSmokeTest {
     } | ConvertTo-Json -Compress)
 
     $InsertedVoteId = $null
-    $CleanedUp = $false
+    $VoteCleanedUp = $false
+    $InsertedWishId = $null
+    $WishCleanedUp = $false
+
+    $TempSessionId = $null
+    $TempWineId = $null
+    $TempHistoryId = $null
+
     try {
-        # 1. Exact db.submitVote pre-lookup (SELECT id)
-        try {
-            $PreLookup = Get-SupabaseRows $LookupUri $BaseHeaders
-        } catch {
-            throw "Smoke vote SELECT id pre-check failed: $(Get-HttpErrorDetail $_)"
-        }
-        if ($PreLookup.Count -ne 0) {
-            throw "Smoke vote pre-check expected 0 rows, found $($PreLookup.Count)."
+        # Optional isolated Host lifecycle if valid Passcode was explicitly supplied
+        $HasValidHost = $false
+        $HostWriteHeaders = $null
+        if ($Passcode -and $Passcode.Trim()) {
+            $HostCheckHeaders = @{} + $BaseHeaders
+            $HostCheckHeaders["x-host-passcode"] = $Passcode.Trim()
+            try {
+                $RpcOk = Invoke-RestMethod -Method Post -Uri "$RestBase/rpc/check_is_host" -Headers $HostCheckHeaders -Body "{}" -TimeoutSec 15
+                if ($RpcOk -eq $true) {
+                    $HasValidHost = $true
+                    $HostWriteHeaders = @{} + $WriteHeaders
+                    $HostWriteHeaders["x-host-passcode"] = $Passcode.Trim()
+                }
+            } catch {
+                Write-Warning "Host RPC pre-check skipped isolated session creation: $(Get-HttpErrorDetail $_)"
+            }
         }
 
-        # 2. Exact db.submitVote INSERT path with column-level SELECT projection
-        $InsertBody = @{
-            session_id   = $SessionId
+        if ($HasValidHost) {
+            $HostBaseHeaders = @{} + $BaseHeaders
+            $HostBaseHeaders["x-host-passcode"] = $Passcode.Trim()
+
+            $TodayStr = (Get-Date).ToString("yyyy-MM-dd")
+            $SessBody = @{ name = $SmokeSessionName; date = $TodayStr; status = "setup" } | ConvertTo-Json -Compress
+            $TempSess = Invoke-RestMethod -Method Post -Uri "$RestBase/sessions?select=id,status" -Headers $HostWriteHeaders -Body $SessBody -TimeoutSec 15
+            $TempSessionId = [string]$TempSess.id
+            $TargetSessionId = $TempSessionId
+
+            $WineBody = @{
+                session_id   = $TempSessionId
+                submitted_by = $SmokeVoter
+                name         = $SmokeWineName
+                price        = 24.50
+                revealed     = $false
+                owner_token  = $VoterToken
+            } | ConvertTo-Json -Compress
+            $TempWine = Invoke-RestMethod -Method Post -Uri "$RestBase/wines?select=id,name" -Headers $WriteHeaders -Body $WineBody -TimeoutSec 15
+            $TempWineId = [string]$TempWine.id
+
+            $WinePatch = @{ blind_label = "A"; revealed = $true } | ConvertTo-Json -Compress
+            Invoke-RestMethod -Method Patch -Uri "$RestBase/wines?id=eq.$([uri]::EscapeDataString($TempWineId))&select=id" -Headers $HostWriteHeaders -Body $WinePatch -TimeoutSec 15 | Out-Null
+
+            $HistBody = @{
+                id                = $TempSessionId
+                name              = $SmokeSessionName
+                date              = $TodayStr
+                winner_name       = $SmokeWineName
+                winner_price      = 24.50
+                winner_brought_by = $SmokeVoter
+                wines_count       = 1
+                group_winner      = "$SmokeWineName (`$24.50)"
+                second_place      = "N/A"
+                best_value        = "$SmokeWineName (`$24.50)"
+                wines             = @()
+                votes             = @()
+            } | ConvertTo-Json -Compress
+            $HistHeaders = @{} + $HostWriteHeaders
+            $HistHeaders["Prefer"] = "resolution=merge-duplicates,return=representation"
+            Invoke-RestMethod -Method Post -Uri "$RestBase/history" -Headers $HistHeaders -Body $HistBody -TimeoutSec 15 | Out-Null
+            $TempHistoryId = $TempSessionId
+        }
+
+        # 2. Votes CRUD lifecycle (SELECT -> INSERT -> UPDATE -> DELETE)
+        $VoteLookupUri = "$RestBase/votes?select=id&session_id=eq.$([uri]::EscapeDataString($TargetSessionId))&voter_name=eq.$([uri]::EscapeDataString($SmokeVoter))&match_id=eq.$([uri]::EscapeDataString($SmokeMatch))"
+        $PreVote = Get-SupabaseRows $VoteLookupUri $BaseHeaders
+        if ($PreVote.Count -ne 0) {
+            throw "Smoke vote pre-check expected 0 rows, found $($PreVote.Count)."
+        }
+
+        $VoteInsertBody = @{
+            session_id   = $TargetSessionId
             voter_name   = $SmokeVoter
             match_id     = $SmokeMatch
-            wine_1_label = "Wine A"
-            wine_2_label = "Wine A"
+            wine_1_label = "A"
+            wine_2_label = "A"
             slider_value = 80
             notes_wine_1 = "build-smoke-insert"
             notes_wine_2 = $MetaJson
             voter_token  = $VoterToken
         } | ConvertTo-Json -Compress
-
-        try {
-            $Inserted = Invoke-RestMethod -Method Post -Uri "$RestBase/votes?select=$EscapedCols" -Headers $WriteHeaders -Body $InsertBody -TimeoutSec 15
-        } catch {
-            throw "Smoke vote INSERT failed: $(Get-HttpErrorDetail $_)"
-        }
-        if (-not $Inserted -or -not $Inserted.id -or [double]$Inserted.slider_value -ne 80) {
+        $InsertedVote = Invoke-RestMethod -Method Post -Uri "$RestBase/votes?select=$EscapedVoteCols" -Headers $WriteHeaders -Body $VoteInsertBody -TimeoutSec 15
+        if (-not $InsertedVote -or -not $InsertedVote.id -or [double]$InsertedVote.slider_value -ne 80) {
             throw "Smoke vote INSERT returned invalid row payload."
         }
-        $InsertedVoteId = [string]$Inserted.id
+        $InsertedVoteId = [string]$InsertedVote.id
 
-        # 3. Exact db.submitVote re-lookup + UPDATE path
-        try {
-            $ExistingLookup = Get-SupabaseRows $LookupUri $BaseHeaders
-        } catch {
-            throw "Smoke vote SELECT id post-insert failed: $(Get-HttpErrorDetail $_)"
-        }
-        if ($ExistingLookup.Count -ne 1 -or [string]$ExistingLookup[0].id -ne $InsertedVoteId) {
-            throw "Smoke vote SELECT id post-insert did not return inserted id $InsertedVoteId."
-        }
-
-        $UpdateBody = @{
-            session_id   = $SessionId
+        $VoteUpdateBody = @{
+            session_id   = $TargetSessionId
             voter_name   = $SmokeVoter
             match_id     = $SmokeMatch
-            wine_1_label = "Wine A"
-            wine_2_label = "Wine A"
+            wine_1_label = "A"
+            wine_2_label = "A"
             slider_value = 91
             notes_wine_1 = "build-smoke-update"
             notes_wine_2 = $MetaJson
             voter_token  = $VoterToken
         } | ConvertTo-Json -Compress
-
-        try {
-            $Updated = Invoke-RestMethod -Method Patch -Uri "$RestBase/votes?id=eq.$([uri]::EscapeDataString($InsertedVoteId))&select=$EscapedCols" -Headers $WriteHeaders -Body $UpdateBody -TimeoutSec 15
-        } catch {
-            throw "Smoke vote UPDATE failed: $(Get-HttpErrorDetail $_)"
-        }
-        if (-not $Updated -or [string]$Updated.id -ne $InsertedVoteId -or [double]$Updated.slider_value -ne 91 -or $Updated.notes_wine_1 -ne "build-smoke-update") {
+        $UpdatedVote = Invoke-RestMethod -Method Patch -Uri "$RestBase/votes?id=eq.$([uri]::EscapeDataString($InsertedVoteId))&select=$EscapedVoteCols" -Headers $WriteHeaders -Body $VoteUpdateBody -TimeoutSec 15
+        if (-not $UpdatedVote -or [string]$UpdatedVote.id -ne $InsertedVoteId -or [double]$UpdatedVote.slider_value -ne 91) {
             throw "Smoke vote UPDATE did not persist expected values."
         }
 
-        # 4. DELETE cleanup + verification
-        try {
-            Invoke-RestMethod -Method Delete -Uri "$RestBase/votes?id=eq.$([uri]::EscapeDataString($InsertedVoteId))" -Headers $BaseHeaders -TimeoutSec 15 | Out-Null
-            $CleanedUp = $true
-        } catch {
-            throw "Smoke vote DELETE failed: $(Get-HttpErrorDetail $_)"
-        }
-
-        $PostDelete = Get-SupabaseRows $LookupUri $BaseHeaders
-        if ($PostDelete.Count -ne 0) {
+        Invoke-RestMethod -Method Delete -Uri "$RestBase/votes?id=eq.$([uri]::EscapeDataString($InsertedVoteId))" -Headers $BaseHeaders -TimeoutSec 15 | Out-Null
+        $VoteCleanedUp = $true
+        if ((Get-SupabaseRows $VoteLookupUri $BaseHeaders).Count -ne 0) {
             throw "Smoke vote DELETE left residual row in public.votes."
         }
-        Write-Host "Live Supabase vote smoke test passed (SELECT -> INSERT -> UPDATE -> DELETE on id=$InsertedVoteId)." -ForegroundColor Green
+
+        # 3. Wishlist CRUD lifecycle (SELECT -> INSERT -> UPDATE -> DELETE)
+        $WishLookupUri = "$RestBase/wishlist?select=id&voter_name=eq.$([uri]::EscapeDataString($SmokeVoter))&wine_name=eq.$([uri]::EscapeDataString($SmokeWineName))"
+        $WishInsertBody = @{
+            voter_name  = $SmokeVoter
+            wine_name   = $SmokeWineName
+            price       = 24.50
+            note        = "smoke-initial"
+            voter_token = $VoterToken
+        } | ConvertTo-Json -Compress
+        $InsertedWish = Invoke-RestMethod -Method Post -Uri "$RestBase/wishlist?select=$EscapedWishCols" -Headers $WriteHeaders -Body $WishInsertBody -TimeoutSec 15
+        if (-not $InsertedWish -or -not $InsertedWish.id) {
+            throw "Smoke wishlist INSERT returned invalid payload."
+        }
+        $InsertedWishId = [string]$InsertedWish.id
+
+        $WishUpdateBody = @{ note = "smoke-updated" } | ConvertTo-Json -Compress
+        $UpdatedWish = Invoke-RestMethod -Method Patch -Uri "$RestBase/wishlist?id=eq.$([uri]::EscapeDataString($InsertedWishId))&select=$EscapedWishCols" -Headers $WriteHeaders -Body $WishUpdateBody -TimeoutSec 15
+        if (-not $UpdatedWish -or $UpdatedWish.note -ne "smoke-updated") {
+            throw "Smoke wishlist UPDATE did not persist expected note."
+        }
+
+        Invoke-RestMethod -Method Delete -Uri "$RestBase/wishlist?id=eq.$([uri]::EscapeDataString($InsertedWishId))" -Headers $BaseHeaders -TimeoutSec 15 | Out-Null
+        $WishCleanedUp = $true
+        if ((Get-SupabaseRows $WishLookupUri $BaseHeaders).Count -ne 0) {
+            throw "Smoke wishlist DELETE left residual row in public.wishlist."
+        }
+
+        $ScopeMsg = if ($HasValidHost) { "sessions, wines, votes, history, wishlist" } else { "votes + wishlist (plus read checks across all 5 tables)" }
+        Write-Host "Live Supabase multi-table smoke test passed ($ScopeMsg; zero residual rows)." -ForegroundColor Green
     } finally {
-        if ($InsertedVoteId -and -not $CleanedUp) {
-            try {
-                Invoke-RestMethod -Method Delete -Uri "$RestBase/votes?id=eq.$([uri]::EscapeDataString($InsertedVoteId))" -Headers $BaseHeaders -TimeoutSec 15 | Out-Null
-            } catch {
-                Write-Warning "Cleanup failed for smoke vote id=${InsertedVoteId}: $(Get-HttpErrorDetail $_)"
+        if ($InsertedVoteId -and -not $VoteCleanedUp) {
+            try { Invoke-RestMethod -Method Delete -Uri "$RestBase/votes?id=eq.$([uri]::EscapeDataString($InsertedVoteId))" -Headers $BaseHeaders -TimeoutSec 15 | Out-Null } catch { Write-Warning "Vote cleanup failed: $(Get-HttpErrorDetail $_)" }
+        }
+        if ($InsertedWishId -and -not $WishCleanedUp) {
+            try { Invoke-RestMethod -Method Delete -Uri "$RestBase/wishlist?id=eq.$([uri]::EscapeDataString($InsertedWishId))" -Headers $BaseHeaders -TimeoutSec 15 | Out-Null } catch { Write-Warning "Wishlist cleanup failed: $(Get-HttpErrorDetail $_)" }
+        }
+        if ($Passcode -and $Passcode.Trim()) {
+            $HostDelHeaders = @{} + $BaseHeaders
+            $HostDelHeaders["x-host-passcode"] = $Passcode.Trim()
+            if ($TempHistoryId) {
+                try { Invoke-RestMethod -Method Delete -Uri "$RestBase/history?id=eq.$([uri]::EscapeDataString($TempHistoryId))" -Headers $HostDelHeaders -TimeoutSec 15 | Out-Null } catch { Write-Warning "Temp history cleanup failed: $(Get-HttpErrorDetail $_)" }
+            }
+            if ($TempWineId) {
+                try { Invoke-RestMethod -Method Delete -Uri "$RestBase/wines?id=eq.$([uri]::EscapeDataString($TempWineId))" -Headers $HostDelHeaders -TimeoutSec 15 | Out-Null } catch { Write-Warning "Temp wine cleanup failed: $(Get-HttpErrorDetail $_)" }
+            }
+            if ($TempSessionId) {
+                try { Invoke-RestMethod -Method Delete -Uri "$RestBase/sessions?id=eq.$([uri]::EscapeDataString($TempSessionId))" -Headers $HostDelHeaders -TimeoutSec 15 | Out-Null } catch { Write-Warning "Temp session cleanup failed: $(Get-HttpErrorDetail $_)" }
             }
         }
     }
@@ -496,11 +592,15 @@ try {
 
     Write-Host "1. Copying files..." -ForegroundColor Cyan
     Copy-SafeDirectory (Join-Path $ProjectDir "src") (Join-Path $BuildDir "src") $ProjectDirCanonical $TempDirCanonical
+    $E2EDir = Join-Path $ProjectDir "e2e"
+    if (Test-Path -LiteralPath $E2EDir) {
+        Copy-SafeDirectory $E2EDir (Join-Path $BuildDir "e2e") $ProjectDirCanonical $TempDirCanonical
+    }
     
     $ProjectLockFile = Join-Path $ProjectDir "package-lock.json"
     if (-not (Test-Path -LiteralPath $ProjectLockFile)) { throw "package-lock.json required." }
 
-    @("package.json", "package-lock.json", "vite.config.ts", "tsconfig.json", "tsconfig.node.json", "postcss.config.js", "tailwind.config.js", "index.html") | ForEach-Object {
+    @("package.json", "package-lock.json", "vite.config.ts", "vitest.config.ts", "playwright.config.ts", ".eslintrc.cjs", "tsconfig.json", "tsconfig.node.json", "postcss.config.js", "tailwind.config.js", "index.html") | ForEach-Object {
         $p = Join-Path $ProjectDir $_
         if (Test-Path -LiteralPath $p) { [PathSecurity]::CopyFileHandleBound($p, (Join-Path $BuildDir $_), $ProjectDirCanonical, $TempDirCanonical) }
     }
@@ -541,22 +641,47 @@ try {
     Set-Location $BuildDir; & $NpmCmd ci --ignore-scripts --no-audit --no-fund
     if ($LASTEXITCODE -ne 0) { throw "npm ci failed ($LASTEXITCODE)" }
 
-    Write-Host "3. Compiling..." -ForegroundColor Cyan
+    Write-Host "3. Linting & running unit/component tests..." -ForegroundColor Cyan
+    & $NpmCmd run lint; if ($LASTEXITCODE -ne 0) { throw "npm run lint failed ($LASTEXITCODE)" }
+    & $NpmCmd test; if ($LASTEXITCODE -ne 0) { throw "npm test failed ($LASTEXITCODE)" }
+
+    Write-Host "4. Compiling production bundle..." -ForegroundColor Cyan
     & $NpmCmd run build; if ($LASTEXITCODE -ne 0) { throw "npm run build failed ($LASTEXITCODE)" }
 
     $CompiledDist = Join-Path $BuildDir "dist"
     if (-not (Test-Path -LiteralPath (Join-Path $CompiledDist "index.html"))) { throw "index.html not found in $CompiledDist" }
 
-    Write-Host "4. Scanning artifacts..." -ForegroundColor Cyan
+    Write-Host "5. Scanning artifacts..." -ForegroundColor Cyan
     Assert-SecretScan $CompiledDist
     Write-Host "Bundle secret scan passed." -ForegroundColor Green
 
+    if ($RunE2E) {
+        Write-Host "5b. Running Playwright E2E tests against built bundle (vite preview)..." -ForegroundColor Cyan
+        $PrevPreviewCmd = $env:PLAYWRIGHT_WEB_SERVER_CMD
+        try {
+            $env:PLAYWRIGHT_WEB_SERVER_CMD = "npx vite preview --host 127.0.0.1 --port 4173 --strictPort"
+            & $NpmCmd run test:e2e
+            if ($LASTEXITCODE -ne 0) { throw "Playwright E2E tests failed ($LASTEXITCODE)" }
+        } finally {
+            if ($null -eq $PrevPreviewCmd) {
+                Remove-Item Env:PLAYWRIGHT_WEB_SERVER_CMD -ErrorAction SilentlyContinue
+            } else {
+                $env:PLAYWRIGHT_WEB_SERVER_CMD = $PrevPreviewCmd
+            }
+        }
+    }
+
     Set-Location $OriginalLocation
 
-    Write-Host "5. Running live Supabase vote smoke test (SELECT -> INSERT -> UPDATE -> DELETE)..." -ForegroundColor Cyan
-    Invoke-LiveVoteSmokeTest -Url $SmokeConfig.Url -AnonKey $SmokeConfig.AnonKey
+    if (-not $SkipSmokeTest) {
+        Write-Host "6. Running live Supabase multi-table smoke test (CRUD + cleanup verification)..." -ForegroundColor Cyan
+        $EffectivePasscode = if ($HostPasscode) { $HostPasscode } else { $PreservedEnvVars['WINE_HOST_PASSCODE'] }
+        Invoke-LiveMultiTableSmokeTest -Url $SmokeConfig.Url -AnonKey $SmokeConfig.AnonKey -Passcode $EffectivePasscode
+    } else {
+        Write-Host "6. Skipping live Supabase smoke test (-SkipSmokeTest set)." -ForegroundColor Yellow
+    }
 
-    Write-Host "6. Publishing distribution..." -ForegroundColor Cyan
+    Write-Host "7. Publishing distribution..." -ForegroundColor Cyan
     Copy-SafeDirectory $CompiledDist $TargetDist $TempDirCanonical $ProjectDirCanonical -Prune
     Assert-SecretScan $TargetDist
     if (-not (Test-Path -LiteralPath (Join-Path $TargetDist "index.html"))) { throw ("index.html not found in " + $TargetDist) }

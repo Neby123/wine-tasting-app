@@ -1,0 +1,53 @@
+name: Wine Tasting App CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+jobs:
+  verify:
+    name: Lint, Typecheck, Unit Tests & Playwright E2E
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint TypeScript and React components
+        run: npm run lint
+
+      - name: Run Vitest unit and component tests
+        run: npm test
+
+      - name: Typecheck and build production bundle
+        run: npm run build
+
+      - name: Run Chrome Modern Web Guidance legacy audit
+        run: npx -y modern-web-guidance@latest legacy-scan src --json
+
+      - name: Install Playwright Chromium browser
+        run: npx playwright install chromium
+
+      - name: Run Playwright E2E tests against built bundle
+        env:
+          PLAYWRIGHT_WEB_SERVER_CMD: npx vite preview --host 127.0.0.1 --port 4173 --strictPort
+        run: npm run test:e2e
+
+      - name: Upload Playwright trace artifacts on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-traces
+          path: test-results/
+          retention-days: 7
