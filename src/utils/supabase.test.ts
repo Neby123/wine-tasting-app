@@ -375,4 +375,64 @@ describe('supabase data layer', () => {
       'Wine auto-fill is unavailable because the optional enrich-wine Edge Function is not deployed on this backend. Enter details manually.'
     );
   });
+
+  it('caches a single stable voter_token in memory when iPhone/browser storage throws', async () => {
+    vi.stubEnv('VITE_SUPABASE_URL', 'https://demo.supabase.co');
+    vi.stubEnv('VITE_SUPABASE_ANON_KEY', 'anon-key-123');
+    vi.doMock('./storage', async () => {
+      const actual = await vi.importActual<typeof import('./storage')>('./storage');
+      return {
+        ...actual,
+        safeStorageGet: () => null,
+        safeStorageSet: () => undefined,
+      };
+    });
+
+    const mock = createMockSupabaseFactory((call) => {
+      if (call.op === 'select') return { data: [], error: null };
+      if (call.op === 'insert') {
+        return {
+          data: {
+            id: 'vote-mem',
+            session_id: 'sess-1',
+            voter_name: 'David',
+            match_id: 'STANDALONE_A',
+            wine_1_label: 'A',
+            wine_2_label: 'A',
+            slider_value: 83,
+          },
+          error: null,
+        };
+      }
+      return { data: null, error: null };
+    });
+
+    vi.doMock('@supabase/supabase-js', () => ({ createClient: mock.createClient }));
+    const { db, getOrGenerateVoterToken } = await import('./supabase');
+
+    const tokenA = getOrGenerateVoterToken();
+    const tokenB = getOrGenerateVoterToken();
+    expect(tokenA).toBe(tokenB);
+
+    let capturedInit: RequestInit | undefined;
+    globalThis.fetch = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      capturedInit = init;
+      return new Response('{}', { status: 200 });
+    }) as unknown as typeof fetch;
+
+    await mock.getCapturedFetch()!('https://demo.supabase.co/rest/v1/votes', {});
+    expect((capturedInit?.headers as Headers).get('x-voter-token')).toBe(tokenA);
+
+    await db.submitVote({
+      session_id: 'sess-1',
+      voter_name: 'David',
+      match_id: 'STANDALONE_A',
+      wine_1_label: 'A',
+      wine_2_label: 'A',
+      slider_value: 83,
+    });
+
+    const insertCall = mock.calls.find((c) => c.op === 'insert');
+    expect((insertCall?.payload as { voter_token?: string })?.voter_token).toBe(tokenA);
+  });
 });

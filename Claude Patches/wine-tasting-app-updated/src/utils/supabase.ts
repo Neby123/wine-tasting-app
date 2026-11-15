@@ -39,14 +39,21 @@ const getSBConfig = () => {
   return null;
 };
 
-// Synchronously ensure voter token exists (RFC4122 compliant UUID)
+let cachedVoterToken: string | null = null;
+
+// Synchronously ensure voter token exists (RFC4122 compliant UUID), cached in memory
+// so private/restricted iOS Safari tabs never emit mismatched row vs header tokens.
 export const getOrGenerateVoterToken = (): string => {
-  let token = safeStorageGet('WINE_TASTING_VOTER_TOKEN');
-  if (!token) {
-    token = generateUuid();
-    safeStorageSet('WINE_TASTING_VOTER_TOKEN', token);
+  const stored = safeStorageGet('WINE_TASTING_VOTER_TOKEN');
+  if (stored) {
+    cachedVoterToken = stored;
+    return stored;
   }
-  return token;
+  if (!cachedVoterToken) {
+    cachedVoterToken = generateUuid();
+  }
+  safeStorageSet('WINE_TASTING_VOTER_TOKEN', cachedVoterToken);
+  return cachedVoterToken;
 };
 
 const getDynamicHeaders = (): Record<string, string> => {
@@ -271,7 +278,7 @@ export const db = {
     const client = ensureClient();
     const { data, error } = await client
       .from('wines')
-      .insert({ ...wine, revealed: false })
+      .insert({ ...wine, revealed: false, owner_token: getOrGenerateVoterToken() })
       .select(WINE_PUBLIC_COLUMNS)
       .single();
 
@@ -282,7 +289,8 @@ export const db = {
   addWinesBatch: async (winesToAdd: Omit<Wine, 'id' | 'revealed'>[]): Promise<Wine[]> => {
     if (winesToAdd.length === 0) return [];
     const client = ensureClient();
-    const rows = winesToAdd.map(w => ({ ...w, revealed: false }));
+    const ownerToken = getOrGenerateVoterToken();
+    const rows = winesToAdd.map(w => ({ ...w, revealed: false, owner_token: ownerToken }));
     const { data, error } = await client
       .from('wines')
       .insert(rows)
@@ -364,7 +372,7 @@ export const db = {
       throw new Error('Voter name is required before saving a rating.');
     }
 
-    const findExistingVoteCaseInsensitive = async () => {
+    const findExistingVoteCaseInsensitive = async (allowScanFallback = false) => {
       const normalizedTarget = dbPayload.voter_name.toLowerCase();
       const escapedVoter = dbPayload.voter_name.replace(/[\\%_]/g, ch => `\\${ch}`);
       const { data: candidates, error: existErr } = await client
@@ -375,7 +383,22 @@ export const db = {
         .ilike('voter_name', escapedVoter)
         .limit(5);
       if (existErr) throw existErr;
-      return (candidates || []).find(
+      const exactMatch = (candidates || []).find(
+        (row: { id: string; voter_name?: string | null }) =>
+          (row.voter_name || '').trim().toLowerCase() === normalizedTarget
+      );
+      if (exactMatch || !allowScanFallback) {
+        return exactMatch || null;
+      }
+
+      const { data: allForMatch, error: scanErr } = await client
+        .from('votes')
+        .select('id,voter_name')
+        .eq('session_id', dbPayload.session_id)
+        .eq('match_id', dbPayload.match_id)
+        .limit(100);
+      if (scanErr) throw scanErr;
+      return (allForMatch || []).find(
         (row: { id: string; voter_name?: string | null }) =>
           (row.voter_name || '').trim().toLowerCase() === normalizedTarget
       ) || null;
@@ -425,7 +448,7 @@ export const db = {
     if (error) {
       // Retry as update if a concurrent request inserted first (SQLSTATE 23505)
       if ((error as { code?: string })?.code === '23505') {
-        const raced = await findExistingVoteCaseInsensitive();
+        const raced = await findExistingVoteCaseInsensitive(true);
         if (raced) {
           return await performVoteUpdate(raced);
         }

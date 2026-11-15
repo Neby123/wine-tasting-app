@@ -36,8 +36,8 @@ jobs:
       - name: Run Chrome Modern Web Guidance legacy audit
         run: npx -y modern-web-guidance@latest legacy-scan src --json
 
-      - name: Install Playwright Chromium browser
-        run: npx playwright install chromium
+      - name: Install Playwright browsers (Chromium & WebKit)
+        run: npx playwright install --with-deps chromium webkit
 
       - name: Run Playwright E2E tests against built bundle
         env:

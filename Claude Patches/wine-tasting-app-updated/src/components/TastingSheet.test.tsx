@@ -217,4 +217,40 @@ describe('TastingSheet', () => {
     window.dispatchEvent(beforeUnloadEvent);
     expect(beforeUnloadEvent.defaultPrevented).toBe(true);
   });
+
+  it('preserves ratings entered before selecting a taster name when the guest chooses their name', async () => {
+    const user = userEvent.setup();
+    const onSubmitStandaloneRating = vi.fn().mockResolvedValue(undefined);
+    const wines = buildWines();
+
+    const { rerender } = render(
+      <TastingSheet
+        sessionId="sess-1"
+        wines={wines}
+        voterName=""
+        votes={[]}
+        onSubmitStandaloneRating={onSubmitStandaloneRating}
+        onUpdateVoterName={vi.fn()}
+      />
+    );
+
+    await user.click(screen.getByRole('button', { name: /Wine A/i }));
+    fireEvent.change(screen.getByLabelText(/Wine A Score/i), { target: { value: '86' } });
+    await user.click(screen.getByRole('button', { name: /Yes!/i }));
+    expect(screen.getByText(/Unsaved draft \(86\/100\)/i)).toBeInTheDocument();
+
+    rerender(
+      <TastingSheet
+        sessionId="sess-1"
+        wines={wines}
+        voterName="Jack"
+        votes={[]}
+        onSubmitStandaloneRating={onSubmitStandaloneRating}
+        onUpdateVoterName={vi.fn()}
+      />
+    );
+
+    expect(screen.getByText(/Unsaved draft \(86\/100\)/i)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Save All Unsaved Ratings \(1\)/i })).toBeInTheDocument();
+  });
 });

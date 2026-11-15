@@ -53,7 +53,7 @@ export const loadSessionDrafts = (
   sessionId: string,
   voterName: string
 ): Record<string, TastingDraft> => {
-  if (!sessionId || !(voterName || '').trim()) return {};
+  if (!sessionId) return {};
   const raw = safeStorageGet(getDraftStorageKey(sessionId, voterName));
   if (!raw) return {};
   try {
@@ -70,15 +70,31 @@ export const saveWineDraft = (
   label: string,
   draft: TastingDraft
 ): Record<string, TastingDraft> => {
-  const cleanVoter = (voterName || '').trim();
-  if (!sessionId || !cleanVoter || !label) return {};
-  const existing = loadSessionDrafts(sessionId, cleanVoter);
+  if (!sessionId || !label) return {};
+  const existing = loadSessionDrafts(sessionId, voterName);
   const next: Record<string, TastingDraft> = {
     ...existing,
     [label]: draft
   };
-  safeStorageSet(getDraftStorageKey(sessionId, cleanVoter), JSON.stringify(next));
+  safeStorageSet(getDraftStorageKey(sessionId, voterName), JSON.stringify(next));
   return next;
+};
+
+export const promoteAnonymousDrafts = (
+  sessionId: string,
+  voterName: string
+): Record<string, TastingDraft> => {
+  const cleanVoter = (voterName || '').trim();
+  if (!sessionId || !cleanVoter) return {};
+  const anonKey = getDraftStorageKey(sessionId, '');
+  const anonDrafts = loadSessionDrafts(sessionId, '');
+  const namedDrafts = loadSessionDrafts(sessionId, cleanVoter);
+  const anonKeys = Object.keys(anonDrafts);
+  if (anonKeys.length === 0) return namedDrafts;
+  const merged = { ...anonDrafts, ...namedDrafts };
+  safeStorageSet(getDraftStorageKey(sessionId, cleanVoter), JSON.stringify(merged));
+  safeStorageRemove(anonKey);
+  return merged;
 };
 
 export const clearWineDraft = (
@@ -86,16 +102,15 @@ export const clearWineDraft = (
   voterName: string,
   label: string
 ): Record<string, TastingDraft> => {
-  const cleanVoter = (voterName || '').trim();
-  if (!sessionId || !cleanVoter || !label) return {};
-  const existing = loadSessionDrafts(sessionId, cleanVoter);
+  if (!sessionId || !label) return {};
+  const existing = loadSessionDrafts(sessionId, voterName);
   if (!(label in existing)) return existing;
   const next = { ...existing };
   delete next[label];
   if (Object.keys(next).length === 0) {
-    safeStorageRemove(getDraftStorageKey(sessionId, cleanVoter));
+    safeStorageRemove(getDraftStorageKey(sessionId, voterName));
   } else {
-    safeStorageSet(getDraftStorageKey(sessionId, cleanVoter), JSON.stringify(next));
+    safeStorageSet(getDraftStorageKey(sessionId, voterName), JSON.stringify(next));
   }
   return next;
 };

@@ -39,6 +39,14 @@ export default defineConfig({
         isMobile: true,
       },
     },
+    {
+      name: 'mobile-webkit',
+      use: {
+        ...devices['iPhone 14'],
+        hasTouch: true,
+        isMobile: true,
+      },
+    },
   ],
   webServer: process.env.PLAYWRIGHT_SKIP_WEBSERVER
     ? undefined

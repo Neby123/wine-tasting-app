@@ -85,6 +85,8 @@ export default function App() {
   const loadSeqRef = useRef(0);
   const desyncSeqRef = useRef(0);
   const revealingRef = useRef(false);
+  const winesRef = useRef<Wine[]>(wines);
+  winesRef.current = wines;
 
   useFormAriaSync(initFormRef, [newSessionName, newSessionDate, sessionFormError]);
 
@@ -286,7 +288,7 @@ export default function App() {
         async () => {
           const updatedVotes = await db.getVotes(activeSession.id);
           setVotes(updatedVotes);
-          void refreshArchiveDesyncStatus(activeSession, wines, updatedVotes);
+          void refreshArchiveDesyncStatus(activeSession, winesRef.current, updatedVotes);
         }
       )
       .subscribe();
@@ -294,7 +296,7 @@ export default function App() {
     return () => {
       client.removeChannel(channel);
     };
-  }, [activeSession?.id, activeSession?.status, refreshArchiveDesyncStatus, wines]);
+  }, [activeSession?.id, activeSession?.status, refreshArchiveDesyncStatus]);
 
   // Fallback polling (10s while open, 25s when completed to catch late guest ratings)
   useEffect(() => {

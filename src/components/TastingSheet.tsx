@@ -3,7 +3,8 @@ import type { BuyAgainIntent, PerceivedPriceTier, TastingDraft, Vote, Wine } fro
 import {
   loadSessionDrafts,
   saveWineDraft,
-  clearWineDraft
+  clearWineDraft,
+  promoteAnonymousDrafts
 } from '../utils/storage';
 import {
   ChevronDown,
@@ -128,11 +129,17 @@ export default function TastingSheet({
     const storedDrafts = loadSessionDrafts(sessionId, voterName);
 
     if (contextChanged) {
+      const wasUnnamed = !prevContextRef.current.voterName.trim();
+      if (wasUnnamed && voterName.trim()) {
+        promoteAnonymousDrafts(sessionId, voterName);
+      }
       prevContextRef.current = { sessionId, voterName };
-      setExpandedLabels({});
+      setExpandedLabels(prev => (wasUnnamed ? prev : {}));
       setCardErrors({});
       setSavedNoticeLabel(null);
       setNameAlert('');
+
+      const activeDrafts = loadSessionDrafts(sessionId, voterName);
 
       const initScores = { ...dbScores };
       const initNotes = { ...dbNotes };
@@ -143,7 +150,7 @@ export default function TastingSheet({
       const initSweetness = { ...dbSweetness };
       const initDirty: Record<string, boolean> = {};
 
-      Object.entries(storedDrafts).forEach(([label, draft]) => {
+      Object.entries(activeDrafts).forEach(([label, draft]) => {
         initScores[label] = draft.score;
         initNotes[label] = draft.notes || '';
         initPrices[label] = draft.perceivedPrice;
